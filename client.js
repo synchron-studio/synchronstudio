@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.15.3";
+const APP_VERSION = "9.16.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -237,6 +237,9 @@ let scene = null;
 let localVideoBuf = null, videoBlobUrl = null;
 let fetchedVideoBlobUrl = null;   // Blob-URL vom CDN-Download (nicht Host-Upload)
 let sceneVideoLoadToken = 0;
+let sceneVideoController = null;
+let mixLoadToken = 0;
+let sceneAudioController = new AbortController();
 let myLoadPct = 0;
 let myVideoReady = false;
 let pendingGoLines = false;
@@ -275,6 +278,10 @@ function sendHost(msg) {
   try { hostConn.send(msg); return true; } catch (e) { console.warn("sendHost:", e); return false; }
 }
 function clearSceneCaches() {
+  mixLoadToken++;
+  sceneAudioController.abort();
+  sceneAudioController = new AbortController();
+  try { origLoading.clear(); } catch {}
   try { origCache.clear(); } catch {}
   try { voiceTrackCache.clear(); } catch {}
   try { voiceTrackLoading.clear(); } catch {}
@@ -302,16 +309,92 @@ function setBar(id, pct) {
   el.style.display = pct >= 100 ? "none" : "";
   el.querySelector("i").style.width = Math.min(100, Math.max(0, pct)) + "%";
 }
-// Wartet, bis das Video wirklich abspielbereit ist (canplaythrough), mit Timeout-Fallback
-function waitCanPlay(v, timeoutMs = 20000) {
-  return new Promise(res => {
-    if (v.readyState >= 3) return res();
-    const done = () => { clearTimeout(to); v.removeEventListener("canplaythrough", done); v.removeEventListener("canplay", done); res(); };
-    const to = setTimeout(done, timeoutMs);
-    v.addEventListener("canplaythrough", done);
-    v.addEventListener("canplay", done);
-    v.load();
+// A timeout is a failure, never a ready signal.
+function waitCanPlay(v, timeoutMs = 30000, signal) {
+  return StudioReliability.waitMedia(v, { timeoutMs, signal });
+}
+
+function loadFailure(statusId, retry) {
+  status(statusId, tt("Loading failed. Check your connection and try again.", "Laden fehlgeschlagen. Verbindung prüfen und erneut versuchen."), true);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = tt("↻ Retry", "↻ Erneut laden");
+  button.style.marginLeft = "10px";
+  button.onclick = () => { button.disabled = true; retry(); };
+  $(statusId)?.appendChild(button);
+}
+
+// Mobile browsers may require a fresh tap after a countdown or a remote start.
+// Keep waiting for real playback; never start recording silence behind this panel.
+let pendingMediaTap = null;
+async function playMedia(v) {
+  try { return await v.play(); }
+  catch (error) {
+    if (error.name !== "NotAllowedError") throw error;
+  }
+  if (pendingMediaTap?.video === v) return pendingMediaTap.promise;
+  pendingMediaTap?.cancel();
+  const panel = document.createElement("div");
+  panel.className = "media-tap-overlay";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", tt("Start playback", "Wiedergabe starten"));
+  const card = document.createElement("div");
+  card.className = "card";
+  const text = document.createElement("p");
+  text.textContent = tt("Your browser needs a tap to start video and sound.", "Dein Browser braucht einen Fingertipp, um Video und Ton zu starten.");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = tt("▶ Start video and sound", "▶ Video und Ton starten");
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = tt("Cancel", "Abbrechen");
+  card.append(text, button, cancel);
+  panel.append(card);
+  document.body.append(panel);
+  const previousFocus = document.activeElement;
+  const source = v.src;
+  const phase = aktuellePhase();
+  const request = { video: v };
+  pendingMediaTap = request;
+  request.promise = new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearInterval(watch);
+      panel.remove();
+      if (pendingMediaTap === request) pendingMediaTap = null;
+      previousFocus?.focus?.();
+      error ? reject(error) : resolve();
+    };
+    request.cancel = () => finish(Object.assign(new Error("Playback cancelled"), { name: "AbortError" }));
+    const watch = setInterval(() => {
+      if (v.src !== source || aktuellePhase() !== phase) request.cancel();
+    }, 250);
+    cancel.onclick = request.cancel;
+    panel.onkeydown = event => {
+      if (event.key === "Escape") request.cancel();
+      if (event.key === "Tab") {
+        event.preventDefault();
+        (document.activeElement === button ? cancel : button).focus();
+      }
+    };
+    button.onclick = () => {
+      // Both calls must happen inside the tap, before any await.
+      button.disabled = true;
+      try {
+        Promise.resolve(getCtx().resume()).catch(() => {});
+        Promise.resolve(v.play()).then(() => finish(), error => {
+          if (error.name !== "NotAllowedError") return finish(error);
+          button.disabled = false;
+          text.textContent = tt("Playback is still blocked. Tap again or check browser permissions.", "Wiedergabe noch blockiert. Nochmal tippen oder Browser-Berechtigungen prüfen.");
+        });
+      } catch (error) { finish(error); }
+    };
   });
+  button.focus();
+  return request.promise;
 }
 
 function revokeFetchedVideo() {
@@ -323,7 +406,9 @@ function revokeFetchedVideo() {
 
 /** Szene-Video-Zustand leeren (CDN-Blob + Host-Upload), Lade-Flags zurück. */
 function clearSceneVideoState() {
-  sceneVideoLoadToken++;   // laufende Downloads abbrechen
+  sceneVideoLoadToken++;
+  sceneVideoController?.abort();
+  sceneVideoController = null;
   revokeFetchedVideo();
   if (videoBlobUrl) {
     try { if (String(videoBlobUrl).startsWith("blob:")) URL.revokeObjectURL(videoBlobUrl); } catch {}
@@ -341,46 +426,28 @@ function clearSceneVideoState() {
 /** Lädt eine Video-URL als Blob (richtiger MIME-Typ) und meldet 0–100 % Fortschritt.
  *  Scheitert das CDN (403 bei Übergrößen, 5xx, Netzfehler), wird still auf
  *  GitHub Raw umgeschwenkt — das ist genau das Verhalten von vor v9.12.1. */
-async function fetchVideoAsBlob(url, onProgress) {
+async function fetchVideoAsBlob(url, onProgress, signal) {
   try {
-    return await fetchVideoAsBlobFrom(url, onProgress);
+    return await fetchVideoAsBlobFrom(url, onProgress, signal);
   } catch (e) {
+    if (signal?.aborted || e.name === "AbortError") throw e;
     const raw = rawUrlFor(url);
     if (!raw) throw e;
-    console.warn("Video über CDN fehlgeschlagen (" + e.message + ") → Notfallweg GitHub Raw:", raw);
-    try { if (onProgress) onProgress(0); } catch {}
-    return await fetchVideoAsBlobFrom(raw, onProgress);
+    console.warn("Video CDN failed, trying GitHub Raw:", e.message);
+    onProgress?.(0);
+    return fetchVideoAsBlobFrom(raw, onProgress, signal);
   }
 }
 
-async function fetchVideoAsBlobFrom(url, onProgress) {
-  const res = await fetch(url, { mode: "cors", cache: "force-cache" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const total = Number(res.headers.get("content-length")) || 0;
-  if (!res.body || typeof res.body.getReader !== "function") {
-    const buf = await res.arrayBuffer();
-    if (onProgress) onProgress(100);
-    return URL.createObjectURL(new Blob([buf], { type: "video/mp4" }));
-  }
-  const reader = res.body.getReader();
-  const chunks = [];
-  let received = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.byteLength;
-    if (onProgress) {
-      if (total > 0) onProgress(Math.min(99, Math.round(received / total * 100)));
-      else onProgress(Math.min(95, Math.round(received / (1024 * 1024) * 4)));
-    }
-  }
-  if (onProgress) onProgress(100);
-  return URL.createObjectURL(new Blob(chunks, { type: "video/mp4" }));
+async function fetchVideoAsBlobFrom(url, onProgress, signal) {
+  return URL.createObjectURL(await StudioReliability.downloadBlob(url, { onProgress, signal }));
 }
+
 
 function reportLoadProgress(pct, ready) {
-  myLoadPct = Math.max(0, Math.min(100, pct | 0));
+  const nextPct = Math.max(0, Math.min(100, pct | 0));
+  if (nextPct === myLoadPct && !!ready === myVideoReady && nextPct > 0 && !ready) return;
+  myLoadPct = nextPct;
   myVideoReady = !!ready;
   const me = players.find(p => p.id === myId);
   if (me) { me.loadPct = myLoadPct; me.videoReady = myVideoReady; }
@@ -442,12 +509,15 @@ function clearLoadReassure(key) {
 
 /** Szene-Video laden: Remote per Blob-Download (Fortschritt + MIME-Fix), Blob-URLs direkt. */
 function beginSceneVideoLoad(src) {
+  sceneVideoController?.abort();
+  sceneVideoController = new AbortController();
+  const signal = sceneVideoController.signal;
   const token = ++sceneVideoLoadToken;
   pendingGoLines = false;
   pendingGoRealtime = false;
   myLoadPct = 0;
   myVideoReady = false;
-  revokeFetchedVideo();
+  if (src !== fetchedVideoBlobUrl) revokeFetchedVideo();
   reportLoadProgress(0, false);
   clearLoadReassure("lobby");
 
@@ -460,10 +530,16 @@ function beginSceneVideoLoad(src) {
   }
   if (/^blob:/i.test(src)) {
     if (preview) preview.src = src;
-    myVideoReady = true;
-    myLoadPct = 100;
-    reportLoadProgress(100, true);
-    setBar("download-bar", 100);
+    waitCanPlay(preview, 30000, signal).then(() => {
+      if (token !== sceneVideoLoadToken) return;
+      reportLoadProgress(100, true);
+      setBar("download-bar", 100);
+      flushPendingStart();
+    }).catch(e => {
+      if (signal.aborted) return;
+      reportLoadProgress(0, false);
+      loadFailure("lobby-status", () => beginSceneVideoLoad(src));
+    });
     return;
   }
 
@@ -475,11 +551,10 @@ function beginSceneVideoLoad(src) {
     try {
       const blobUrl = await fetchVideoAsBlob(src, (pct) => {
         if (token !== sceneVideoLoadToken) return;
-        myLoadPct = pct;
         setBar("download-bar", pct);
         reportLoadProgress(pct, false);
         status("lobby-status", tt("📥 Video loading … ", "📥 Video lädt … ") + pct + "%" + (pct < 100 ? tt(" — please wait", " — bitte warten") : ""));
-      });
+      }, signal);
       if (token !== sceneVideoLoadToken) {
         try { URL.revokeObjectURL(blobUrl); } catch {}
         return;
@@ -487,6 +562,8 @@ function beginSceneVideoLoad(src) {
       fetchedVideoBlobUrl = blobUrl;
       videoBlobUrl = blobUrl;
       if (preview) preview.src = blobUrl;
+      await waitCanPlay(preview, 30000, signal);
+      if (token !== sceneVideoLoadToken) return;
       myLoadPct = 100;
       myVideoReady = true;
       setBar("download-bar", 100);
@@ -497,10 +574,11 @@ function beginSceneVideoLoad(src) {
       flushPendingStart();
     } catch (e) {
       if (token !== sceneVideoLoadToken) return;
+      revokeFetchedVideo();
       console.warn("Video-Blob-Load fehlgeschlagen, Fallback auf Direkt-URL:", e);
       try {
         if (preview) preview.src = src;
-        await waitCanPlay(preview, 90000);
+        await waitCanPlay(preview, 30000, signal);
         if (token !== sceneVideoLoadToken) return;
         myLoadPct = 100;
         myVideoReady = true;
@@ -510,11 +588,12 @@ function beginSceneVideoLoad(src) {
         status("lobby-status", tt("✅ Video ready — pick a role & “I’m ready”.", "✅ Video bereit — Rolle wählen & „Bin bereit“."));
         flushPendingStart();
       } catch (e2) {
+        if (token !== sceneVideoLoadToken) return;
         console.warn("Video-Fallback auch fehlgeschlagen:", e2);
         myVideoReady = false;
         clearLoadReassure("lobby");
         reportLoadProgress(myLoadPct, false);
-        status("lobby-status", tt("❌ Video couldn’t load. Check your connection — big scenes (~20 MB) need a bit of patience.", "❌ Video konnte nicht geladen werden. Verbindung prüfen — große Szenen (~20 MB) brauchen etwas Geduld."), true);
+        loadFailure("lobby-status", () => beginSceneVideoLoad(src));
         SFX.err();
       }
     }
@@ -680,6 +759,18 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.16.0", items: [
+    "🖼 Sae vs Rin: 13 falsche Bildpfade korrigiert; Verweise auf vier nicht vorhandene Charakterbilder entfernt",
+    "🌐 Szenenwechsel stoppt alte Downloads wirklich — mehr Bandbreite für die aktuelle Szene",
+    "🎧 Sprachaufnahmen verwenden eine sparsame Bitrate für kleinere Übertragungen; beim Wiederverbinden bleibt ein bereits geladenes Szenenvideo erhalten",
+    "📥 Festhängende Downloads werden erkannt; Ladefehler bieten einen erneuten Versuch. Ein Timeout meldet das Video nicht mehr fälschlich als bereit",
+    "📡 Ladefortschritt erzeugt weniger Netzwerkverkehr; laufende Fortschrittsmeldungen werden regelmäßig an Mitspieler verteilt",
+    "🎞 Eigene Videos werden mit Rücksicht auf volle Sendepuffer übertragen; verspätete Pakete einer alten Szene werden ignoriert",
+    "🗣 Original-Sprachdateien laden ohne doppelte Anfragen und mit bis zu drei gleichzeitigen Downloads für kürzere Vorbereitung",
+    "📱 Blockiert der Handy-Browser Video oder Ton, erscheint ein Startknopf. Beendete Mikrofonverbindungen werden beim nächsten Aufnahmestart neu geöffnet",
+    "🎙 Aufnahme: unnötige Wartezeit beim Sprung zur Zeile und ein liegengebliebener Timer behoben. Bei fehlgeschlagenem Videostart wird keine Aufnahme gestartet",
+    "🧪 Automatische Funktionstests sichern Laden, Abbrüche, Übertragung und Handy-Wiedergabe vor dem Veröffentlichen ab"
+  ]},
   { v: "9.15.3", items: [
     "🎬 Akaza FULL FIGHT: Video-Qualität deutlich besser (720p aus besserer Quelle)"
   ]},
@@ -1955,6 +2046,7 @@ async function getMicStream(preferredId) {
 async function buildMic() {
   try {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
     micStream = await getMicStream(micSettings.deviceId);
     try {
       const liveId = micStream.getAudioTracks()[0]?.getSettings?.().deviceId;
@@ -1980,6 +2072,7 @@ async function buildMic() {
     micSrcNode = ctx.createMediaStreamSource(micStream);
     micSrcNode.connect(micHP);
     applyMicTuning();
+    startGateLoop();
     return true;
   } catch (e) {
     const n = e && e.name;
@@ -2080,7 +2173,10 @@ function startGateLoop() {
 }
 
 function recStream() { return recDest.stream; }
-async function ensureMic() { return micStream ? true : buildMic(); }
+async function ensureMic() {
+  if (micStream?.getAudioTracks().some(track => track.readyState === "live")) return true;
+  return buildMic();
+}
 
 async function populateDevices() {
   const sel = $("mic-device");
@@ -2467,7 +2563,7 @@ async function initMicScreen() {
 $("btn-mic-record").onclick = async () => {
   if (!micStream) { await initMicScreen(); if (!micStream) return; }
   status("mic-status", tt("🎤 Speak for 3 seconds …", "🎤 Sprich jetzt 3 Sekunden …"));
-  const rec = new MediaRecorder(recStream(), { mimeType: pickMime() });
+  const rec = voiceRecorder();
   const chunks = [];
   rec.ondataavailable = e => chunks.push(e.data);
   rec.onstop = async () => {
@@ -4287,7 +4383,12 @@ function aktuellePhase() {
   const aktiv = document.querySelector(".screen.active");
   return aktiv ? aktiv.id : "scr-lobby";
 }
-function broadcast(msg) { conns.forEach(c => { if (c.open) c.send(msg); }); }
+function broadcast(msg) {
+  conns.forEach(c => {
+    if (!c.open) return;
+    try { c.send(msg); } catch (error) { console.warn("Broadcast failed for one peer:", error); }
+  });
+}
 let stateBroadcastTimer = null;
 function flushStateBroadcast() {
   clearTimeout(stateBroadcastTimer);
@@ -4305,8 +4406,8 @@ function broadcastState(opts) {
   renderPlayers();
   renderBoothPlayers();
   if (opts && opts.throttle) {
-    clearTimeout(stateBroadcastTimer);
-    stateBroadcastTimer = setTimeout(flushStateBroadcast, 300);
+    // Throttle, not debounce: continuous progress must still reach guests.
+    if (!stateBroadcastTimer) stateBroadcastTimer = setTimeout(flushStateBroadcast, 300);
     checkStartable();
     if (isHost) renderPremState();
     return;
@@ -4362,8 +4463,9 @@ function applyPhaseRestore(msg) {
   }
   if (msg.duelInfo) duelInfo = msg.duelInfo;
   if (msg.scene) {
+    const sameVideo = scene?.videoUrl && scene.videoUrl === msg.scene.videoUrl && videoBlobUrl;
     scene = msg.scene;
-    if (!msg.hatVideoUebertragung) { revokeFetchedVideo(); videoBlobUrl = null; }
+    if (!sameVideo && !msg.hatVideoUebertragung && !msg.keepReceivedVideo) { revokeFetchedVideo(); videoBlobUrl = null; }
     showScene(sceneVideoSrc());
   }
   seedLocalPlayer(msg.role);
@@ -4395,7 +4497,8 @@ function applyPhaseRestore(msg) {
 
   if (msg.phase === "scr-playback" && msg.mix) {
     if (!scene) { enterLobby(raumCode); return; }
-    loadMix(msg.mix, msg).then(() => {
+    loadMix(msg.mix, msg).then(loaded => {
+      if (loaded === false) return;
       if (msg.ratingOpen) {
         premiereLocked = true;
         pendingRate = false;
@@ -4422,7 +4525,7 @@ function applyPhaseRestore(msg) {
     show("scr-playback");
     status("play-status", tt("🔌 Back in — rating is running …", "🔌 Wieder drin — Bewertung läuft …"));
     if (msg.mix) {
-      loadMix(msg.mix, msg).then(() => { if (!rateSent) showRateCard(); }).catch(() => { if (!rateSent) showRateCard(); });
+      loadMix(msg.mix, msg).then(loaded => { if (loaded !== false && !rateSent) showRateCard(); }).catch(e => console.warn("Rejoin rating:", e));
     } else if (!rateSent) showRateCard();
   } else if (msg.phase === "scr-duel-vote") {
     show("scr-duel-vote");
@@ -4761,7 +4864,7 @@ function handleMsg(msg, conn) {
     case "matchEnd": showFinal(msg.list, msg.rounds, msg.championName); break;
     case "matchLobby": backToLobby(); break;
     case "videoMeta": startVideoReceive(msg); break;
-    case "videoChunk": receiveVideoChunk(msg.buf); break;
+    case "videoChunk": receiveVideoChunk(msg.buf, msg.transferId, msg.offset); break;
     case "goLines": queueOrStartBooth(); break;
     case "go": queueOrStartRealtime(); break;
     case "mix": loadMix(msg.data, msg); break;
@@ -5669,43 +5772,77 @@ function resetRoles() {
   });
 }
 
+const videoTransfers = new WeakMap();
+let videoTransferSeq = 0;
 function sendLocalVideo(conn) {
-  conn.send({ t: "videoMeta", scene, size: localVideoBuf.byteLength });
+  const bytes = localVideoBuf; // Snapshot: changing scenes must not change an in-flight file.
+  const selectedScene = scene;
+  if (!bytes || !conn?.open) return;
+  const transferId = String(++videoTransferSeq);
+  videoTransfers.set(conn, transferId);
   let off = 0;
+  let lastProgress = Date.now(), lastBuffered = Infinity;
   const pump = () => {
-    while (off < localVideoBuf.byteLength) {
-      if (conn.dataChannel && conn.dataChannel.bufferedAmount > BUFFER_LIMIT) { setTimeout(pump, 30); return; }
-      conn.send({ t: "videoChunk", buf: localVideoBuf.slice(off, off + CHUNK_SIZE) });
+    if (!conn.open || videoTransfers.get(conn) !== transferId || localVideoBuf !== bytes || scene !== selectedScene) return;
+    try {
+      // PeerJS has its own queue in addition to the browser's data channel.
+      const buffered = (conn.dataChannel?.bufferedAmount || 0) + (conn.bufferSize || 0) * CHUNK_SIZE;
+      if (buffered < lastBuffered) lastProgress = Date.now();
+      lastBuffered = buffered;
+      if (conn.bufferSize > 0 || (conn.dataChannel?.bufferedAmount || 0) > BUFFER_LIMIT) {
+        if (Date.now() - lastProgress > 60000) {
+          conn.close(); // Let the existing rejoin flow recover a channel that stopped draining.
+          return;
+        }
+        setTimeout(pump, 40);
+        return;
+      }
+      // Yield after every chunk so PeerJS can serialize it and control messages can run.
+      conn.send({ t: "videoChunk", transferId, offset: off, buf: bytes.slice(off, off + CHUNK_SIZE) });
       off += CHUNK_SIZE;
-    }
+      lastProgress = Date.now();
+      if (off < bytes.byteLength) setTimeout(pump, 0);
+    } catch (error) { console.warn("Video transfer stopped:", error); }
   };
-  pump();
+  try {
+    conn.send({ t: "videoMeta", scene: selectedScene, size: bytes.byteLength, transferId });
+    setTimeout(pump, 0);
+  } catch (error) { console.warn("Video transfer could not start:", error); }
 }
 
-let rxBuf = null, rxOff = 0, rxSize = 0;
+let rxBuf = null, rxOff = 0, rxSize = 0, rxTransferId = null;
 function startVideoReceive(msg) {
+  if (!Number.isSafeInteger(msg.size) || msg.size <= 0 || msg.size > 512 * 1024 * 1024 || !msg.scene) {
+    status("lobby-status", tt("Video is empty or too large (maximum 512 MB).", "Video ist leer oder zu groß (maximal 512 MB)."), true);
+    return;
+  }
+  clearSceneVideoState();
   scene = msg.scene; rxSize = msg.size; rxBuf = new Uint8Array(rxSize); rxOff = 0;
+  rxTransferId = msg.transferId ?? null;
+  reportLoadProgress(0, false);
   $("scene-card").style.display = "";
   $("scene-title").textContent = scene.title;
-  $("download-bar").style.display = "";
+  setBar("download-bar", 0);
   renderRoles();
 }
-function receiveVideoChunk(buf) {
+function receiveVideoChunk(buf, transferId, offset) {
+  if (!rxBuf || (rxTransferId !== null && transferId !== rxTransferId)) return;
   const arr = new Uint8Array(buf);
+  if ((offset != null && offset !== rxOff) || !arr.byteLength || rxOff + arr.byteLength > rxSize) {
+    rxBuf = null;
+    status("lobby-status", tt("Video transfer interrupted. Rejoin the room to retry.", "Videoübertragung unterbrochen. Raum erneut betreten, um neu zu laden."), true);
+    return;
+  }
   rxBuf.set(arr, rxOff); rxOff += arr.length;
-  const bar = $("download-bar");
-  if (bar) bar.querySelector("i").style.width = Math.round(rxOff / rxSize * 100) + "%";
-  if (rxOff >= rxSize) {
-    if (bar) bar.style.display = "none";
+  setBar("download-bar", Math.floor(rxOff / rxSize * 99));
+  if (rxOff === rxSize) {
     videoBlobUrl = URL.createObjectURL(new Blob([rxBuf], { type: "video/mp4" }));
     rxBuf = null;
     showScene(videoBlobUrl);
-    SFX.ok();
-    // Nach Reload mit eigenem Host-Video: Phase fortsetzen, sobald Bytes da sind
     if (pendingPhaseRestore) {
       const m = pendingPhaseRestore;
       pendingPhaseRestore = null;
-      applyPhaseRestore(Object.assign({}, m, { hatVideoUebertragung: false, forceRestore: true }));
+      applyPhaseRestore(Object.assign({}, m, { hatVideoUebertragung: false, keepReceivedVideo: true, forceRestore: true }));
     }
   }
 }
@@ -6069,10 +6206,19 @@ function pickMime() {
   return "";
 }
 
+function voiceRecorder() {
+  const mimeType = pickMime();
+  // Speech does not need the browser's default music bitrate. Keep AAC a little higher.
+  return new MediaRecorder(recStream(), {
+    ...(mimeType ? { mimeType } : {}),
+    audioBitsPerSecond: mimeType.includes("mp4") ? 96000 : 64000
+  });
+}
+
 $("btn-mic-test").onclick = async () => {
   if (!(await ensureMic())) return;
   status("lobby-status", tt("🎤 Speak for 3 seconds …", "🎤 Sprich jetzt 3 Sekunden …"));
-  const rec = new MediaRecorder(recStream(), { mimeType: pickMime() });
+  const rec = voiceRecorder();
   const chunks = [];
   rec.ondataavailable = e => chunks.push(e.data);
   rec.onstop = async () => {
@@ -6894,18 +7040,29 @@ function startBooth() {
   $("btn-line-rec").disabled = true;
   status("booth-status", tt("⏳ Loading video — one moment …", "⏳ Video lädt — einen Moment …"));
   setBar("booth-bar", 30);
-  waitCanPlay(bv).then(() => {
-    setBar("booth-bar", 100);
-    $("btn-line-rec").disabled = false;
-    status("booth-status", t("booth.status"));
-    SFX.ok();
-  });
+  prepareBoothVideo();
   sendProgress();
   show("scr-booth");
   $("onair").classList.add("live");
   SFX.go();
   startVizOn("viz");
   renderLine();
+}
+
+function prepareBoothVideo() {
+  const video = $("booth-video");
+  const source = video.src;
+  const selectedScene = scene;
+  $("btn-line-rec").disabled = true;
+  waitCanPlay(video).then(() => {
+    if (scene !== selectedScene || video.src !== source) return;
+    setBar("booth-bar", 100);
+    $("btn-line-rec").disabled = false;
+    status("booth-status", t("booth.status"));
+  }).catch(() => {
+    if (scene !== selectedScene || video.src !== source) return;
+    loadFailure("booth-status", () => { video.load(); prepareBoothVideo(); });
+  });
 }
 
 /** Primary caption for UI: EN → original `text`, DE → `de` (fallback the other way). */
@@ -6988,15 +7145,17 @@ async function getVoiceTrack() {
   const load = (async () => {
     try {
       const ctx = getCtx();
-      const raw = await (await fetch(url)).arrayBuffer();
-      const buf = await ctx.decodeAudioData(raw);
+      const signal = sceneAudioController.signal;
+      const blob = await StudioReliability.downloadBlob(url, { signal, type: "audio/mpeg" });
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      if (signal.aborted) return null;
       voiceTrackCache.set(url, buf);
       return buf;
     } catch (e) {
       console.warn("Voice-Track nicht ladbar:", e);
       return null;   // Fehlschlag nicht cachen, damit ein erneuter Klick es nochmal versucht
     } finally {
-      voiceTrackLoading.delete(url);
+      if (voiceTrackLoading.get(url) === load) voiceTrackLoading.delete(url);
     }
   })();
   voiceTrackLoading.set(url, load);
@@ -7020,31 +7179,28 @@ async function getLineOrigBuffer(l) {
   if (l.orig) {
     const ctx = getCtx();
     const url = assetUrl(l.orig);
-    if (!origCache.has(url)) {
-      // Früher: await (await fetch(url)).arrayBuffer() — ohne jede Prüfung.
-      // Antwortete das CDN mit 403/404, wurden die Fehlerseiten-Bytes an
-      // decodeAudioData weitergereicht, das warf, und im Booth stand nur
-      // "Original nicht ladbar". Genau das trat bei einzelnen Lines auf.
-      // Jetzt: Antwort prüfen und wie beim Video auf GitHub Raw ausweichen.
-      const laden = async (u) => {
-        const res = await fetch(u, { mode: "cors" });
-        if (!res.ok) throw new Error("HTTP " + res.status + " für " + u);
-        const ab = await res.arrayBuffer();
-        if (!ab || ab.byteLength < 256) throw new Error("Datei zu klein/leer: " + u);
-        return await ctx.decodeAudioData(ab);
+    if (origCache.has(url)) return origCache.get(url);
+    if (origLoading.has(url)) return origLoading.get(url);
+    const signal = sceneAudioController.signal;
+    const pending = (async () => {
+      const load = async u => {
+        const blob = await StudioReliability.downloadBlob(u, { signal, type: "audio/mpeg" });
+        return ctx.decodeAudioData(await blob.arrayBuffer());
       };
-      let dec = null;
-      try {
-        dec = await laden(url);
-      } catch (e1) {
+      let decoded;
+      try { decoded = await load(url); }
+      catch (error) {
         const raw = rawUrlFor(url);
-        if (!raw) throw e1;
-        console.warn("Original-Ton über CDN fehlgeschlagen (" + e1.message + ") → Notfallweg GitHub Raw");
-        dec = await laden(raw);
+        if (signal.aborted || !raw) throw error;
+        decoded = await load(raw);
       }
-      origCache.set(url, dec);
-    }
-    return origCache.get(url);
+      if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+      origCache.set(url, decoded);
+      return decoded;
+    })();
+    origLoading.set(url, pending);
+    try { return await pending; }
+    finally { if (origLoading.get(url) === pending) origLoading.delete(url); }
   }
   const full = await getVoiceTrack();
   if (full) return sliceBuffer(full, l.t, l.end);
@@ -7053,6 +7209,7 @@ async function getLineOrigBuffer(l) {
 function lineHasOrig(l) { return !!(l.orig || scene.voiceTrack); }
 
 const origCache = new Map();
+const origLoading = new Map();
 let origSrc = null, origReqId = 0;
 $("btn-line-orig").onclick = async () => {
   const l = myLines[curLine];
@@ -7185,6 +7342,7 @@ $("btn-line-rec").onclick = async () => {
   setAbortBtn(true);
   status("booth-status", tt("🎯 Getting ready to record …", "🎯 Bereite Aufnahme vor …"));
   try {
+    if (!(await ensureMic())) throw new Error("Microphone unavailable");
     if ($("rec-timer").checked) {
       if ($("rec-wipe") && $("rec-wipe").checked) await wipeCountdown();
       else await recCountdown();
@@ -7194,26 +7352,21 @@ $("btn-line-rec").onclick = async () => {
     // Adaptiver Puffer: nicht in die nächste Line reinlaufen
     recMax = recWindowFor(l);
     const v = $("booth-video");
-    v.pause(); v.currentTime = l.t; v.volume = boothVol; v.playbackRate = 1;
-    await new Promise((res, rej) => {
-      const to = setTimeout(res, 4000);
-      const h = () => { clearTimeout(to); v.removeEventListener("seeked", h); clearInterval(chk); res(); };
-      v.addEventListener("seeked", h);
-      const chk = setInterval(() => {
-        if (recPrepCancel) { clearTimeout(to); clearInterval(chk); v.removeEventListener("seeked", h); rej(Object.assign(new Error("cancel"), { name: "RecCancel" })); }
-      }, 40);
-    });
+    v.pause(); v.volume = boothVol; v.playbackRate = 1;
+    await StudioReliability.seekMedia(v, l.t, { cancelled: () => recPrepCancel });
+
     lineChunks = [];
-    lineRec = new MediaRecorder(recStream(), { mimeType: pickMime() });
+    lineRec = voiceRecorder();
     lineRec.ondataavailable = e => { if (e.data.size) lineChunks.push(e.data); };
     lineRec.onstop = onLineRecorded;
-    await v.play();
+    await playMedia(v);
     // KEIN Event-Warten mehr (Race!): pollen, bis das Video wirklich läuft
     await new Promise((res, rej) => {
       const t0 = performance.now();
       const iv = setInterval(() => {
         if (recPrepCancel) { clearInterval(iv); rej(Object.assign(new Error("cancel"), { name: "RecCancel" })); return; }
-        if (v.currentTime > l.t + 0.03 || performance.now() - t0 > 2500) { clearInterval(iv); res(); }
+        if (v.currentTime > l.t + 0.03) { clearInterval(iv); res(); }
+        else if (performance.now() - t0 > 2500) { clearInterval(iv); rej(new Error("Video did not start")); }
       }, 16);
     });
     if (recPrepCancel) throw Object.assign(new Error("cancel"), { name: "RecCancel" });
@@ -7859,16 +8012,19 @@ async function startRealtime() {
     status("wait-status", tt("🍿 You’re watching — the premiere starts automatically when everyone’s done.", "🍿 Du bist Zuschauer — die Premiere startet automatisch, wenn alle fertig sind."));
     return;
   }
+  try {
+  if (!(await ensureMic())) throw new Error("Microphone unavailable");
   const role = roleOf(rid) || { name: "—" };
   $("rec-role").textContent = tt("🎭 You are: ", "🎭 Du bist: ") + role.name;
   const v = $("rec-video");
   v.src = sceneVideoSrc();
   attachPrompter(v, $("rec-prompter"), myRoles());
   show("scr-record");
+  await waitCanPlay(v);
   await countdown();
   $("onair").classList.add("live");
   rtChunks = [];
-  rtRecorder = new MediaRecorder(recStream(), { mimeType: pickMime() });
+  rtRecorder = voiceRecorder();
   rtRecorder.ondataavailable = e => { if (e.data.size) rtChunks.push(e.data); };
   rtRecorder.onstop = async () => {
     $("onair").classList.remove("live");
@@ -7878,10 +8034,19 @@ async function startRealtime() {
     if (isHost) collectTracks(myRole(), items);
     else sendHost({ t: "tracks", role: myRole(), items });
   };
-  rtRecorder.start();
   v.currentTime = 0;
-  await v.play();
+  await playMedia(v);
+  rtRecorder.start();
   v.onended = () => { if (rtRecorder.state !== "inactive") rtRecorder.stop(); };
+  } catch (error) {
+    $("rec-video").pause();
+    $("onair").classList.remove("live");
+    if (rtRecorder) {
+      rtRecorder.onstop = null;
+      if (rtRecorder.state !== "inactive") rtRecorder.stop();
+    }
+    loadFailure("rec-status", () => startRealtime());
+  }
 }
 
 // opts.wipe !== false → Balken nur wenn Checkbox an UND Booth aktiv
@@ -9654,7 +9819,8 @@ function redoLine(lineIdx, fromScreen) {
   if (av) $("booth-avatar").src = assetUrl(av);
   $("booth-rolename").textContent = roleOf(rid).name + tt(" (fix)", " (Korrektur)");
   setBar("booth-bar", 30);
-  waitCanPlay(bv).then(() => { setBar("booth-bar", 100); $("btn-line-rec").disabled = false; });
+  $("btn-line-rec").disabled = true;
+  prepareBoothVideo();
   show("scr-booth");
   $("onair").classList.add("live");
   startVizOn("viz");
@@ -9802,7 +9968,11 @@ async function loadDuelSequence(dataA, dataB, info) {
   const pv = $("play-video");
   pv.src = sceneVideoSrc();
   attachPrompter(pv, $("play-prompter"), null);
-  await waitCanPlay(pv, 25000);
+  try { await waitCanPlay(pv, 30000); }
+  catch (error) {
+    loadFailure("play-status", () => loadDuelSequence(dataA, dataB, info));
+    return;
+  }
 
   const playOnce = (items, label) => new Promise(resolve => {
     status("play-status", "🥊 " + label);
@@ -10024,39 +10194,8 @@ function reportPremLoad(pct, ready) {
   else sendHost({ t: "premProg", pct: p, ready: !!ready });
 }
 
-function waitCanPlayProgress(v, onProg, timeoutMs = 25000) {
-  return new Promise(res => {
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(to);
-      clearInterval(iv);
-      v.removeEventListener("canplaythrough", finish);
-      v.removeEventListener("canplay", finish);
-      v.removeEventListener("progress", tick);
-      if (onProg) onProg(100);
-      res();
-    };
-    const tick = () => {
-      if (!onProg || finished) return;
-      try {
-        if (v.buffered && v.buffered.length && v.duration && isFinite(v.duration) && v.duration > 0) {
-          const end = v.buffered.end(v.buffered.length - 1);
-          onProg(Math.min(99, Math.round((end / v.duration) * 100)));
-        } else if (v.readyState >= 2) onProg(40);
-        else if (v.readyState >= 1) onProg(15);
-      } catch {}
-    };
-    if (v.readyState >= 3) { if (onProg) onProg(100); return res(); }
-    const to = setTimeout(finish, timeoutMs);
-    const iv = setInterval(tick, 200);
-    v.addEventListener("canplaythrough", finish);
-    v.addEventListener("canplay", finish);
-    v.addEventListener("progress", tick);
-    tick();
-    try { v.load(); } catch {}
-  });
+function waitCanPlayProgress(v, onProg, timeoutMs = 30000) {
+  return StudioReliability.waitMedia(v, { onProgress: onProg, timeoutMs });
 }
 
 let ambilightRAF = 0;
@@ -10243,6 +10382,9 @@ bindCinemaGlowBtn();
 syncGlowBtn();
 
 async function loadMix(data, metaMsg) {
+  const token = ++mixLoadToken;
+  const selectedScene = scene;
+  const stale = () => token !== mixLoadToken || selectedScene !== scene;
   if (!scene) {
     status("play-status", tt("⚠ Scene isn’t here yet — wait a moment or reload the page.", "⚠ Szene fehlt noch — kurz warten oder Seite neu laden."), true);
     return;
@@ -10271,9 +10413,12 @@ async function loadMix(data, metaMsg) {
     for (const item of track.items) {
       try {
         const ab = await toArrayBuffer(item.buf);
-        mixItems.push({ role: track.role, startAt: item.startAt, lineIdx: item.idx, buffer: processTakeBuffer(ctx, await ctx.decodeAudioData(ab), item.gate, item.effect || (roleOf(track.role) || {}).effect, item.fxAmount), effect: item.effect, fxAmount: item.fxAmount, boost: item.boost, pan: item.pan });
+        const decoded = await ctx.decodeAudioData(ab);
+        if (stale()) return false;
+        mixItems.push({ role: track.role, startAt: item.startAt, lineIdx: item.idx, buffer: processTakeBuffer(ctx, decoded, item.gate, item.effect || (roleOf(track.role) || {}).effect, item.fxAmount), effect: item.effect, fxAmount: item.fxAmount, boost: item.boost, pan: item.pan });
         okCount++;
       } catch (e) { failCount++; console.warn("Spur kaputt:", track.role, e); }
+      if (stale()) return false;
       doneItems++;
       const decodePct = totalItems ? Math.round((doneItems / totalItems) * 45) : 45;
       reportPremLoad(Math.max(3, decodePct), false);
@@ -10289,22 +10434,27 @@ async function loadMix(data, metaMsg) {
     const coveredIdx = new Set();
     const playedRoles = new Set(data.map(t => t.role));
     data.forEach(t => t.items.forEach(i => { if (i.idx != null) coveredIdx.add(i.idx); }));
-    for (let i = 0; i < scene.lines.length; i++) {
-      const l = scene.lines[i];
-      if (!lineHasOrig(l)) continue;
-      const covered = hasIdx ? coveredIdx.has(i) : l.chars.some(c => playedRoles.has(c));
-      if (covered) continue;
-      try {
-        const buffer = await getLineOrigBuffer(l);
-        if (buffer) {
-          mixItems.push({
-            role: null, startAt: l.t, lineIdx: i, buffer,
-            isOrig: true, origRoles: Array.isArray(l.chars) ? l.chars.slice() : []
-          });
-        }
-      } catch { console.warn("Original fehlt für Line", i); }
-    }
+    const missing = scene.lines.map((line, index) => ({ line, index })).filter(({ line, index }) => {
+      return lineHasOrig(line) && !(hasIdx ? coveredIdx.has(index) : line.chars.some(c => playedRoles.has(c)));
+    });
+    let next = 0, done = 0;
+    // Three downloads at most: avoid hundreds of sequential round trips without flooding mobile connections.
+    await Promise.all(Array.from({ length: Math.min(3, missing.length) }, async () => {
+      while (next < missing.length && !stale()) {
+        const { line: l, index: i } = missing[next++];
+        try {
+          const buffer = await getLineOrigBuffer(l);
+          if (stale()) return;
+          if (buffer) mixItems.push({ role: null, startAt: l.t, lineIdx: i, buffer,
+            isOrig: true, origRoles: Array.isArray(l.chars) ? l.chars.slice() : [] });
+        } catch { console.warn("Original fehlt für Line", i); }
+        if (stale()) return;
+        done++;
+        reportPremLoad(48 + Math.round(done / missing.length * 7), false);
+      }
+    }));
   }
+  if (stale()) return false;
   reportPremLoad(55, false);
   // Video KOMPLETT vorladen, damit die Premiere bei allen gleichzeitig & ruckelfrei startet
   const pv = $("play-video");
@@ -10318,10 +10468,18 @@ async function loadMix(data, metaMsg) {
   pv.src = sceneVideoSrc();
   attachPrompter(pv, $("play-prompter"), null);
   status("play-status", tt("⏳ Preloading video …", "⏳ Video wird vorgeladen …"));
-  await waitCanPlayProgress(pv, pct => {
-    // 55–99 % = Videopuffer
-    reportPremLoad(55 + Math.round((pct / 100) * 44), false);
-  }, 25000);
+  try {
+    await waitCanPlayProgress(pv, pct => {
+      reportPremLoad(55 + Math.round((pct / 100) * 44), false);
+    }, 30000);
+  } catch (error) {
+    if (stale()) return false;
+    clearLoadReassure("prem");
+    reportPremLoad(55, false);
+    loadFailure("play-status", () => loadMix(data, metaMsg));
+    return false;
+  }
+  if (stale()) return false;
   reportPremLoad(100, true);
   clearLoadReassure("prem");
   myPremLocalReady = true;
@@ -10862,7 +11020,10 @@ function premResumeAll(fromHostClick, syncT) {
     if (v && typeof syncT === "number" && isFinite(syncT)) v.currentTime = syncT;
   } catch {}
   Promise.resolve(ctx.resume()).catch(() => {}).then(() => {
-    try { if (v && v.paused && !v.ended) v.play(); } catch {}
+    if (v && v.paused && !v.ended) playMedia(v).catch(() => {
+      exitCinemaMode();
+      loadFailure("play-status", () => premResumeAll(false));
+    });
   });
   updatePremPauseBtn();
   if (fromHostClick && isHost) {
@@ -11337,6 +11498,7 @@ let premCachePending = null;   // Promise → premCache, solange gerade mitgesch
 let premCacheResolve = null;   // Resolver zum sauberen Abbrechen
 let premCacheGen = 0;          // Generation — veraltete Mitschnitte nicht übernehmen
 let premCacheDirty = false;    // Lautstärke/Sync geändert — alter Cache ggf. veraltet
+let premPreparedCleanup = null;
 let premActiveRecorder = null; // laufender MediaRecorder (zum sauberen Stoppen)
 let premRecacheTimer = null;
 let premWakeLock = null;
@@ -11360,6 +11522,7 @@ function invalidatePremCache() {
   premCacheDirty = false;
   premCacheGen++;              // laufende Recorder werden beim Stop irrelevant
   stopPremRecorder();
+  if (premPreparedCleanup) { premPreparedCleanup(); premPreparedCleanup = null; }
   if (premCacheResolve) {
     const r = premCacheResolve;
     premCacheResolve = null;
@@ -11479,6 +11642,21 @@ async function downloadPremiere() {
 }
 
 async function playMix(opts) {
+  try { return await playMixInternal(opts); }
+  catch (error) {
+    console.warn("Premiere could not start:", error);
+    $("play-video").pause();
+    playNodes.forEach(node => { try { node.stop(); } catch {} });
+    playNodes = [];
+    invalidatePremCache();
+    releasePremWakeLock();
+    exitCinemaMode();
+    loadFailure("play-status", () => playMix(opts));
+    return false;
+  }
+}
+
+async function playMixInternal(opts) {
   // opts: true/false (alt) oder { save, quiet, cache }
   const saveFile = opts === true || !!(opts && opts.save);
   const quiet = !!(opts && opts.quiet);
@@ -11521,6 +11699,8 @@ async function playMix(opts) {
     // Der direkte Weg über video.captureStream() liefert auf manchen Rechnern nur
     // Schwarzbild (Hardware-Dekoder/Grafiktreiber) — der Ton war dann da, das Bild fehlte.
     const frames = frameSource(v);
+    const cleanup = () => { try { g.masterGain.disconnect(dest); } catch {} frames.stop(); };
+    premPreparedCleanup = cleanup;
     const stream = new MediaStream([...frames.stream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     // MP4 wenn der Browser es kann: das laesst sich direkt bei TikTok/Insta hochladen,
     // ohne vorher in CapCut umgewandelt zu werden. WebM nur noch als Rueckfalloption.
@@ -11531,6 +11711,8 @@ async function playMix(opts) {
     } catch (e) {
       console.warn("MediaRecorder startet nicht:", e);
       fileRec = null;
+      cleanup();
+      if (premPreparedCleanup === cleanup) premPreparedCleanup = null;
     }
     const chunks = [];
     const volSig = premVolSig();
@@ -11546,8 +11728,8 @@ async function playMix(opts) {
       holdPremWakeLock();
       fileRec.onstop = async () => {
         if (premActiveRecorder === fileRec) premActiveRecorder = null;
-        try { g.masterGain.disconnect(dest); } catch {}
-        frames.stop();
+        cleanup();
+        if (premPreparedCleanup === cleanup) premPreparedCleanup = null;
         releasePremWakeLock(); // immer, auch bei veraltetem Mitschnitt
         if (myGen !== premCacheGen) return; // veralteter Mitschnitt — Pending gehört dem neueren Lauf
         let blob = new Blob(chunks, { type: mime.split(";")[0] });
@@ -11595,7 +11777,7 @@ async function playMix(opts) {
   }
 
   v.pause(); v.currentTime = 0;
-  await v.play();
+  await playMedia(v);
   const recT0 = performance.now();
   if (fileRec) {
     // Ohne timeslice: Chromium schreibt eher Duration. Fallback mit timeslice falls nötig.
