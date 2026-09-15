@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.17.0";
+const APP_VERSION = "9.18.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -30,6 +30,7 @@ const CDN_BASE = "https://cdn.jsdelivr.net/gh/synchron-studio/synchronstudio@mai
 const GH_RAW_BASE = "https://raw.githubusercontent.com/synchron-studio/synchronstudio/main/";
 // Über dem jsDelivr-Limit (Stand v9.12.1). Beim Neu-Encodieren unter 20 MB hier rausnehmen.
 const OVERSIZE_MP4 = new Set([
+  "scenes/aottraitor_v918.mp4", // Längere 720p-Fassung: Qualität beibehalten, über dem CDN-Limit.
   "scenes/zenitsukaigaku.mp4",   // 23,3 MB
   "scenes/kawaimarin.mp4",       // 21,3 MB
   "scenes/akazafullfight.mp4",   // ~93 MB 720p (~24 min FULL FIGHT)
@@ -759,6 +760,12 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.18.0", items: [
+    "🎬 Drei neue Szenen: Ghost Stories — I Don’t Need Another Goddamn Reason, Naruto — Obitos Rede an Kakashi und Sailor Moon — Erste Verwandlung (Deutsch)",
+    "⚔ Attack on Titan — Ihr Verräter durch die längere Fassung von Reiner und Bertholdts Verwandlung ersetzt: rund 4:45 Minuten und 54 Zeilen statt 2:27 Minuten und 28 Zeilen",
+    "🗣 Alle vier Pakete mit passenden Zeitmarken, deutschen Texten, Original-Anhörspuren und Charakterbildern eingebaut",
+    "📥 Videos in voller Länge mit separater Hintergrundspur optimiert; aktualisierte Dialog-Zeitmarken werden auch bei wiederholten Besuchen frisch geladen"
+  ]},
   { v: "9.17.0", items: [
     "🎬 Vier neue Szenen: Bleach — Orihimes Prinzessinnen-Fantasie, Chainsaw Man — Reze Arc: Im Meer, KonoSuba — Schere, Stein, Papier und Bleach — Welcome to My Soul Society",
     "🗣 82 Dialog- und Geräuschzeilen mit deutschen Texten, Original-Anhörspuren und insgesamt 13 Rollen",
@@ -1510,6 +1517,16 @@ function saveMic() { try { localStorage.setItem("ss_mic", JSON.stringify(micSett
 // ═════════════════════════════════════════════════════════════
 const AVATAR_EMOJIS = ["😎","🔥","💀","🎭","🐻","🤖","👻","🦈","🐸","🎃","👑","🥷","🧛","🦊","🐵","⚡"];
 const AVATAR_CHARS = [
+  { img: "scenes/ghost_another_reason/keiichirou_miyanoshita.png", label: "Keiichirou Miyanoshita · Ghost Stories — I Don’t Need Another Goddamn Reason" },
+  { img: "scenes/ghost_another_reason/reiichirou_miyanoshita.png", label: "Reiichirou Miyanoshita · Ghost Stories — I Don’t Need Another Goddamn Reason" },
+  { img: "scenes/ghost_another_reason/satsuki_miyanoshita.png", label: "Satsuki Miyanoshita · Ghost Stories — I Don’t Need Another Goddamn Reason" },
+  { img: "scenes/obito_speech_kakashi/obito.png", label: "Obito · Naruto — Obitos Rede an Kakashi" },
+  { img: "scenes/obito_speech_kakashi/kakashi.png", label: "Kakashi · Naruto — Obitos Rede an Kakashi" },
+  { img: "scenes/obito_speech_kakashi/rin.png", label: "Rin · Naruto — Obitos Rede an Kakashi" },
+  { img: "scenes/obito_speech_kakashi/young_obito.png", label: "Young obito · Naruto — Obitos Rede an Kakashi" },
+  { img: "scenes/sailor_moon_first_transformation/luna.png", label: "Luna · Sailor Moon — Erste Verwandlung (Deutsch)" },
+  { img: "scenes/sailor_moon_first_transformation/bunny.png", label: "Bunny · Sailor Moon — Erste Verwandlung (Deutsch)" },
+  { img: "scenes/sailor_moon_first_transformation/naru.png", label: "Naru · Sailor Moon — Erste Verwandlung (Deutsch)" },
   { img: "scenes/orihime_bossy_princess/orihime.png", label: "Orihime · Bleach — Orihimes Prinzessinnen-Fantasie" },
   { img: "scenes/orihime_bossy_princess/ichigo.png", label: "Ichigo · Bleach — Orihimes Prinzessinnen-Fantasie" },
   { img: "scenes/orihime_bossy_princess/rukia.png", label: "Rukia · Bleach — Orihimes Prinzessinnen-Fantasie" },
@@ -1586,11 +1603,11 @@ const AVATAR_CHARS = [
   { img: "scenes/allmightnomu/kurogiri.png", label: "Kurogiri" },
   { img: "scenes/allmightnomu/tokoyami.png", label: "Tokoyami" },
   { img: "scenes/allmightnomu/ojiro.png", label: "Ojiro" },
-  { img: "scenes/aottraitor/reiner.png", label: "Reiner" },
-  { img: "scenes/aottraitor/eren.png", label: "Eren" },
-  { img: "scenes/aottraitor/bertolt.png", label: "Bertolt" },
-  { img: "scenes/aottraitor/mikasa.png", label: "Mikasa" },
-  { img: "scenes/aottraitor/armin.png", label: "Armin" },
+  { img: "scenes/aottraitor_v918/reiner.png", label: "Reiner" },
+  { img: "scenes/aottraitor_v918/eren.png", label: "Eren" },
+  { img: "scenes/aottraitor_v918/bertholdt.png", label: "Bertolt" },
+  { img: "scenes/aottraitor_v918/mikasa.png", label: "Mikasa" },
+  { img: "scenes/aottraitor_v918/armin.png", label: "Armin" },
   { img: "scenes/aottraitor/historia.png", label: "Historia" },
   { img: "scenes/silentvoice/shouya.png", label: "Shouya" },
   { img: "scenes/silentvoice/mutter.png", label: "Mutter (Silent Voice)" },
@@ -5007,7 +5024,7 @@ async function ensureSceneLines(s) {
   if (!usingSceneIndex) return s;
   if (sceneLinesCache.has(s.id)) { s.lines = sceneLinesCache.get(s.id); return s; }
   try {
-    const r = await fetch("scenedata/" + encodeURIComponent(s.id) + ".json", { cache: "default" });
+    const r = await fetch("scenedata/" + encodeURIComponent(s.id) + ".json?v=" + APP_VERSION, { cache: "default" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
     const lines = data.lines || [];

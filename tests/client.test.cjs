@@ -60,6 +60,23 @@ test('whole client starts with Safari recording format support', t => {
   assert.ok(w.document.querySelector('script[src^="reliability.js?"]').src.endsWith('v=' + w.testVersion));
 });
 
+test('scene updates refresh dialogue timings and reuse them within the release', async t => {
+  const w = app(t, `usingSceneIndex = true; sceneList = [];
+    window.ensureLines = ensureSceneLines; window.release = APP_VERSION;`);
+  const requests = [];
+  const updatedLines = [{t:130.365,end:137.482,chars:[0],text:'Updated scene'}];
+  w.fetch = async url => {
+    requests.push(url);
+    return {ok:true,json:async()=>({id:'aottraitor',lines:updatedLines})};
+  };
+  const first = {id:'aottraitor'}, second = {id:'aottraitor'};
+  await w.ensureLines(first);
+  await w.ensureLines(second);
+  assert.deepEqual(requests, ['scenedata/aottraitor.json?v=' + w.release]);
+  assert.equal(first.lines, updatedLines);
+  assert.equal(second.lines, updatedLines);
+});
+
 test('a broken peer does not prevent broadcasting to other players', t => {
   const w = app(t, `window.run = () => {
     let received = 0;
