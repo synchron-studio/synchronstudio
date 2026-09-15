@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.19.0";
+const APP_VERSION = "9.19.1";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -286,6 +286,7 @@ function clearSceneCaches() {
   pendingDuelGo = false;
   window.__duelRunSequence = null;
   sceneAudioController.abort();
+  stopSceneRecordings();
   sceneAudioController = new AbortController();
   try { sceneLinesLoading.clear(); } catch {}
   try { origLoading.clear(); } catch {}
@@ -767,6 +768,12 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.19.1", items: [
+    "🔍 Szenen-Dateicheck prüft auch Original-Tonspuren von noch nie geöffneten Szenen; nicht ladbare Dialogdaten werden als unvollständige Prüfung angezeigt",
+    "🌐 Dateiprüfungen haben ein Zeitlimit und nutzen bei CDN-Problemen den Ersatzserver, statt unbegrenzt zu warten oder erreichbare Dateien als fehlend zu melden",
+    "🎙 Szenenwechsel und Raumende stoppen laufende Recorder, ohne alte Takes in eine neue Runde zu übertragen",
+    "⏹ Echtzeitaufnahmen starten nach dem Abbrechen eines laufenden Lade- oder Countdown-Vorgangs nicht mehr nachträglich"
+  ]},
   { v: "9.19.0", items: [
     "🔧 Szenen und Duelle lassen sich nach einer Host-Übergabe wieder zuverlässig laden; zwischenzeitlich entzogene Host-Rechte werden berücksichtigt",
     "🔄 Bei schnellen Szenenwechseln gewinnt die letzte Auswahl; fehlerhafte Dialogdaten lassen sich erneut laden, statt eine leere Szene zu starten",
@@ -5247,11 +5254,17 @@ function filesOfScene(s) {
   for (const l of (s.lines || [])) if (l.orig) out.push(assetUrl(l.orig));
   return [...new Set(out)];   // Duplikate raus, spart Anfragen
 }
-async function checkFileExists(url) {
-  try {
-    const res = await fetch(url, { method: "HEAD", cache: "no-store" });
-    return res.ok;
-  } catch { return false; }
+async function checkFileExists(url, timeoutMs = 15000) {
+  const check = async source => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try { return (await fetch(source, { method: "HEAD", cache: "no-store", signal: controller.signal })).ok; }
+    catch { return false; }
+    finally { clearTimeout(timer); }
+  };
+  if (await check(url)) return true;
+  const raw = rawUrlFor(url);
+  return raw ? check(raw) : false;
 }
 async function runWithLimit(tasks, limit) {
   const results = [];
@@ -5272,14 +5285,20 @@ $("btn-check-scenes") && ($("btn-check-scenes").onclick = async () => {
   $("check-bar").style.display = "";
   setBar("check-bar", 0);
 
-  // Alle Datei-Referenzen aus allen Szenen einsammeln
+  // Snapshot: scene changes during this check must not silently reduce its scope.
+  const checkedScenes = sceneList.slice();
+  status("check-status", tt("Loading dialogue references …", "Lade Dialogverweise …"));
+  const metadata = await runWithLimit(checkedScenes.map(s => () => ensureSceneLines(s)), 3);
   const jobs = [];
-  for (const s of sceneList) for (const f of filesOfScene(s)) jobs.push({ sceneId: s.id, title: s.title, file: f });
+  checkedScenes.forEach((s, i) => {
+    if (!metadata[i]) jobs.push({sceneId:s.id, title:s.title, file:"scenedata/" + s.id + ".json", metadataFailed:true});
+    for (const f of filesOfScene(s)) jobs.push({ sceneId: s.id, title: s.title, file: f });
+  });
   if (!jobs.length) { status("check-status", tt("No scenes loaded.", "Keine Szenen geladen."), true); btn.disabled = false; $("check-bar").style.display = "none"; return; }
 
   let done = 0;
   const tasks = jobs.map(j => async () => {
-    const ok = await checkFileExists(j.file);
+    const ok = !j.metadataFailed && await checkFileExists(j.file);
     done++;
     setBar("check-bar", Math.round(done / jobs.length * 100));
     status("check-status", tt("Checking … ", "Prüfe … ") + done + "/" + jobs.length);
@@ -5297,10 +5316,10 @@ $("btn-check-scenes") && ($("btn-check-scenes").onclick = async () => {
   el.style.display = "";
   if (!broken.length) {
     status("check-status", "");
-    el.innerHTML = `<div class="raterow" style="border-color:var(--ok)"><span>✅ ${tt("All good — all ", "Alles in Ordnung — alle ")}${jobs.length}${tt(" files from ", " Dateien aus ")}${sceneList.length}${tt(" scenes are reachable.", " Szenen sind erreichbar.")}</span></div>`;
+    el.innerHTML = `<div class="raterow" style="border-color:var(--ok)"><span>✅ ${tt("All good — all ", "Alles in Ordnung — alle ")}${jobs.length}${tt(" files from ", " Dateien aus ")}${checkedScenes.length}${tt(" scenes are reachable.", " Szenen sind erreichbar.")}</span></div>`;
   } else {
     status("check-status", "");
-    el.innerHTML = `<div class="raterow" style="border-color:var(--hot);margin-bottom:8px"><span>⚠️ ${broken.length} ${tt("of", "von")} ${jobs.length} ${tt("files missing", "Dateien fehlen")} (${Object.keys(bySc).length} ${tt("scenes affected", "Szenen betroffen")})</span></div>` +
+    el.innerHTML = `<div class="raterow" style="border-color:var(--hot);margin-bottom:8px"><span>⚠️ ${broken.length} ${tt("of", "von")} ${jobs.length} ${tt("files could not be verified", "Dateien konnten nicht geprüft werden")} (${Object.keys(bySc).length} ${tt("scenes affected", "Szenen betroffen")})</span></div>` +
       Object.entries(bySc).map(([sid, info]) => `
         <div style="background:#14141b;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:6px">
           <div style="font-weight:700;margin-bottom:4px">${esc(info.title)} <span class="tag">(${esc(sid)})</span></div>
@@ -7621,6 +7640,7 @@ function stopLineRec() {
 }
 
 async function onLineRecorded() {
+  const signal = sceneAudioController.signal;
   const wasAbort = recAbortOuttake;
   recAbortOuttake = false;
   recBusy = false;
@@ -7636,6 +7656,7 @@ async function onLineRecorded() {
     }
   } catch (e) { console.warn("Take-Blob:", e); }
 
+  if (signal.aborted) return;
   // Abbrechen mitten in der Line → Blooper behalten, bisherigen Take nicht anfassen
   if (wasAbort) {
     if (outtakeBufOk(buf)) {
@@ -8085,9 +8106,27 @@ function finishBooth() {
 // ═════════════════════════════════════════════════════════════
 // 7) REALTIME-MODUS (Szenen ohne Line-Timings)
 // ═════════════════════════════════════════════════════════════
+function stopSceneRecordings() {
+  recPrepCancel = true;
+  recBusy = false;
+  recording = false;
+  clearInterval(recTimer);
+  stopRecCue();
+  for (const recorder of [lineRec, rtRecorder]) {
+    if (!recorder) continue;
+    recorder.onstop = null;
+    recorder.ondataavailable = null;
+    try { if (recorder.state !== "inactive") recorder.stop(); } catch {}
+  }
+  const v = $("rec-video");
+  if (v) { v.onended = null; v.pause(); }
+  $("onair").classList.remove("live");
+}
 let rtRecorder = null, rtChunks = [];
 
 async function startRealtime() {
+  const signal = sceneAudioController.signal, selectedScene = scene;
+  const stale = () => signal.aborted || selectedScene !== scene;
   stopLobbyPreview();
   const rid = myRole();
   if (rid == null) {                       // Zuschauer — wie im Line-Booth, sonst stürzt die Seite ab
@@ -8099,6 +8138,7 @@ async function startRealtime() {
   }
   try {
   if (!(await ensureMic())) throw new Error("Microphone unavailable");
+  if (stale()) return;
   const role = roleOf(rid) || { name: "—" };
   $("rec-role").textContent = tt("🎭 You are: ", "🎭 Du bist: ") + role.name;
   const v = $("rec-video");
@@ -8106,7 +8146,9 @@ async function startRealtime() {
   attachPrompter(v, $("rec-prompter"), myRoles());
   show("scr-record");
   await waitCanPlay(v);
+  if (stale()) return;
   await countdown();
+  if (stale()) return;
   $("onair").classList.add("live");
   rtChunks = [];
   rtRecorder = voiceRecorder();
@@ -8115,15 +8157,18 @@ async function startRealtime() {
     $("onair").classList.remove("live");
     status("rec-status", tt("Recording done — collecting all tracks …", "Aufnahme fertig — sammle alle Spuren ein …"));
     const buf = await new Blob(rtChunks, { type: rtChunks[0]?.type }).arrayBuffer();
+    if (stale()) return;
     const items = [{ startAt: 0, buf }];
     if (isHost) collectTracks(myRole(), items);
     else sendHost({ t: "tracks", role: myRole(), items });
   };
   v.currentTime = 0;
   await playMedia(v);
+  if (stale()) return;
   rtRecorder.start();
   v.onended = () => { if (rtRecorder.state !== "inactive") rtRecorder.stop(); };
   } catch (error) {
+    if (stale()) return;
     $("rec-video").pause();
     $("onair").classList.remove("live");
     if (rtRecorder) {

@@ -391,3 +391,44 @@ test('a slow duel guest retains an early start command and starts only once', as
   assert.equal(w.started,1);w.go();assert.equal(w.started,1);
   w.cancel();await delay(0);assert.equal(w.started,1);
 });
+
+test('scene self-check loads lazy dialogue references and reports missing original audio', async t => {
+  const w=app(t, `usingSceneIndex=true;sceneList=[{id:'lazy',title:'Lazy',roles:[],videoUrl:'scenes/video.mp4'}];`);
+  const requests=[];
+  w.fetch=async(url,opts)=>{
+    requests.push(url);
+    if(opts.method==='HEAD')return new Response('',{status:url.includes('missing.mp3')?404:200});
+    return new Response(JSON.stringify({id:'lazy',lines:[{t:0,end:1,chars:[1],orig:'scenes/missing.mp3'}]}));
+  };
+  await w.document.getElementById('btn-check-scenes').onclick();
+  assert.ok(requests.some(url=>url.includes('scenes/missing.mp3')));
+  assert.ok(w.document.getElementById('check-result').textContent.includes('missing.mp3'));
+  assert.equal(w.document.getElementById('btn-check-scenes').disabled,false);
+});
+
+test('asset checks time out and accept a working raw fallback', async t => {
+  const w=app(t, 'window.check=checkFileExists;');
+  w.fetch=(url,{signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted'))));
+  assert.equal(await w.check('https://example.com/stalled',10),false);
+  const urls=[];
+  w.fetch=async url=>{urls.push(url);return new Response('',{status:urls.length===1?503:200});};
+  assert.equal(await w.check('https://cdn.jsdelivr.net/gh/synchron-studio/synchronstudio@main/scenes/test.mp4'),true);
+  assert.ok(urls[1].startsWith('https://raw.githubusercontent.com/'));
+});
+
+test('scene cancellation stops active recorders without submitting takes', t => {
+  const w=app(t, `window.stopped=0;window.submitted=0;
+    const fake=()=>({state:'recording',onstop:()=>window.submitted++,stop(){window.stopped++;this.onstop?.();this.state='inactive';}});
+    lineRec=fake();rtRecorder=fake();window.cancel=clearSceneCaches;`);
+  w.cancel();assert.equal(w.stopped,2);assert.equal(w.submitted,0);
+});
+
+test('leaving during realtime countdown cannot start recording afterwards', async t => {
+  const w=app(t, `scene={videoUrl:'test.mp4',roles:[{id:1,name:'Test'}]};myId='me';players=[{id:'me',role:1}];
+    ensureMic=async()=>true;waitCanPlay=async()=>{};
+    countdown=()=>new Promise(r=>window.finishCountdown=r);
+    window.started=0;voiceRecorder=()=>({start(){window.started++;},state:'inactive'});
+    window.start=startRealtime;window.cancel=clearSceneCaches;`);
+  const pending=w.start();await delay(0);w.cancel();w.finishCountdown();await pending;
+  assert.equal(w.started,0);
+});
