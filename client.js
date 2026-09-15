@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.18.0";
+const APP_VERSION = "9.19.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -240,6 +240,8 @@ let fetchedVideoBlobUrl = null;   // Blob-URL vom CDN-Download (nicht Host-Uploa
 let sceneVideoLoadToken = 0;
 let sceneVideoController = null;
 let mixLoadToken = 0;
+let sceneChoiceToken = 0;
+let pendingDuelGo = false;
 let sceneAudioController = new AbortController();
 let myLoadPct = 0;
 let myVideoReady = false;
@@ -280,8 +282,12 @@ function sendHost(msg) {
 }
 function clearSceneCaches() {
   mixLoadToken++;
+  sceneChoiceToken++;
+  pendingDuelGo = false;
+  window.__duelRunSequence = null;
   sceneAudioController.abort();
   sceneAudioController = new AbortController();
+  try { sceneLinesLoading.clear(); } catch {}
   try { origLoading.clear(); } catch {}
   try { origCache.clear(); } catch {}
   try { voiceTrackCache.clear(); } catch {}
@@ -407,6 +413,7 @@ function revokeFetchedVideo() {
 
 /** Szene-Video-Zustand leeren (CDN-Blob + Host-Upload), Lade-Flags zurück. */
 function clearSceneVideoState() {
+  sceneChoiceToken++;
   sceneVideoLoadToken++;
   sceneVideoController?.abort();
   sceneVideoController = null;
@@ -760,6 +767,14 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.19.0", items: [
+    "🔧 Szenen und Duelle lassen sich nach einer Host-Übergabe wieder zuverlässig laden; zwischenzeitlich entzogene Host-Rechte werden berücksichtigt",
+    "🔄 Bei schnellen Szenenwechseln gewinnt die letzte Auswahl; fehlerhafte Dialogdaten lassen sich erneut laden, statt eine leere Szene zu starten",
+    "📥 Gleichzeitige Anfragen nach denselben Dialogdaten teilen einen Download; hängende Downloads brechen ab, langsame mit Fortschritt laufen weiter",
+    "🥊 Duell-Originalspuren laden mit bis zu drei gleichzeitigen Downloads; langsame Gäste behalten einen frühen Startbefehl, doppelte Starts werden abgefangen",
+    "🎧 Beschädigte Aufnahmen erhalten nach Möglichkeit ihre Originalstimme als Ersatz; durchgehende Sprachspuren nutzen bei CDN-Problemen den Ersatzserver",
+    "🧹 Beim Verlassen werden Audio-Downloads abgebrochen und decodierte Audiospeicher geleert; alte Duellvorbereitungen übernehmen keine neue Szene"
+  ]},
   { v: "9.18.0", items: [
     "🎬 Drei neue Szenen: Ghost Stories — I Don’t Need Another Goddamn Reason, Naruto — Obitos Rede an Kakashi und Sailor Moon — Erste Verwandlung (Deutsch)",
     "⚔ Attack on Titan — Ihr Verräter durch die längere Fassung von Reiner und Bertholdts Verwandlung ersetzt: rund 4:45 Minuten und 54 Zeilen statt 2:27 Minuten und 28 Zeilen",
@@ -3823,6 +3838,7 @@ function leaveRoom(statusMsg) {
   try { peer && peer.destroy(); } catch {}
   peer = null; hostConn = null; conns.clear();
   isHost = false; players = []; scene = null;
+  clearSceneCaches();
   resetDrawBoard();
   pendingPremGo = false; myPremLocalReady = false;
   clearTimeout(premGoRetryTimer); premGoRetryTimer = null;
@@ -4211,7 +4227,7 @@ function reclaimLogicalHost() {
   commitLogicalHost(myKey, stripHostTag(myName));
 }
 // Host-UI-Aktionen vom logischen Host (Gast) → Raum-Besitzer führt aus.
-function handleHostCmd(msg, sender) {
+async function handleHostCmd(msg, sender) {
   if (!isHost || !msg || !msg.cmd) return;
   switch (msg.cmd) {
     case "kick":
@@ -4254,11 +4270,7 @@ function handleHostCmd(msg, sender) {
       const s = (msg.sceneId && sceneList.find(x => x.id === msg.sceneId))
         || (msg.sceneIdx != null ? sceneList[msg.sceneIdx] : null);
       if (!s) break;
-      if (usingSceneIndex && !(s.lines && s.lines.length)) {
-        // Zeilen erst nachladen, dann normal weitermachen
-        ensureSceneLines(s).then(() => handleMsg(msg, conn));
-        break;
-      }
+      if (!await prepareSceneSelection(s, "lobby-status", () => isHost && players.includes(sender) && sender.key === logicalHostKey)) break;
       resetForNewRound();
       clearSceneCaches();
       scene = JSON.parse(JSON.stringify(s));
@@ -4293,10 +4305,7 @@ function handleHostCmd(msg, sender) {
       if (!msg.sceneId || msg.roleId == null || !msg.aId || !msg.bId) break;
       const s = sceneList.find(x => x.id === msg.sceneId);
       if (!s) break;
-      if (usingSceneIndex && !(s.lines && s.lines.length)) {
-        ensureSceneLines(s).then(() => handleMsg(msg, conn));
-        break;
-      }
+      if (!await prepareSceneSelection(s, "duel-setup-status", () => isHost && players.includes(sender) && sender.key === logicalHostKey)) break;
       duelStagedScene = JSON.parse(JSON.stringify(s));
       duelInfo = { roleId: msg.roleId | 0, aId: msg.aId, bId: msg.bId };
       scene = JSON.parse(JSON.stringify(duelStagedScene));
@@ -4888,7 +4897,10 @@ function handleMsg(msg, conn) {
       attachMetaToTracks(msg.dataB, msg.metaB || msg);
       loadDuelSequence(msg.dataA, msg.dataB, msg.duelInfo);
       break;
-    case "duelPlayGo": if (window.__duelRunSequence) { window.__duelRunSequence(); window.__duelRunSequence = null; } break;
+    case "duelPlayGo":
+      if (window.__duelRunSequence) window.__duelRunSequence();
+      else pendingDuelGo = true;
+      break;
     case "duelVoteBroadcast": showDuelVoteLive(msg.tally); break;
     case "duelResult": showDuelResult(msg.result); break;
     case "wins": Object.assign(mgWins, msg.wins); renderWins(); break;
@@ -5018,26 +5030,51 @@ const sceneLinesCache = new Map();   // id -> lines, damit dieselbe Szene nur ei
 
 // Holt die Zeilen einer Szene nach. Ist der Index nicht in Gebrauch (alte Struktur),
 // sind die Zeilen bereits da und es passiert nichts.
+const sceneLinesLoading = new Map();
 async function ensureSceneLines(s) {
-  if (!s) return s;
+  if (!s) return null;
   if (Array.isArray(s.lines) && s.lines.length) return s;
   if (!usingSceneIndex) return s;
-  if (sceneLinesCache.has(s.id)) { s.lines = sceneLinesCache.get(s.id); return s; }
   try {
-    const r = await fetch("scenedata/" + encodeURIComponent(s.id) + ".json?v=" + APP_VERSION, { cache: "default" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
-    const lines = data.lines || [];
-    sceneLinesCache.set(s.id, lines);
-    s.lines = lines;
-    // auch im Listeneintrag hinterlegen, damit spaetere Zugriffe direkt passen
+    if (!sceneLinesCache.has(s.id)) {
+      let pending = sceneLinesLoading.get(s.id);
+      if (!pending) {
+        const signal = sceneAudioController.signal;
+        pending = (async () => {
+          const blob = await StudioReliability.downloadBlob("scenedata/" + encodeURIComponent(s.id) + ".json?v=" + APP_VERSION,
+            { signal, type: "application/json" });
+          const data = JSON.parse(await blob.text());
+          if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+          if (data.id !== s.id || !Array.isArray(data.lines) || !data.lines.length ||
+              data.lines.some(l => !Number.isFinite(l.t) || !Number.isFinite(l.end) || l.end <= l.t || !Array.isArray(l.chars))) {
+            throw new Error("Invalid scene dialogue");
+          }
+          sceneLinesCache.set(s.id, data.lines);
+          return data.lines;
+        })();
+        sceneLinesLoading.set(s.id, pending);
+      }
+      try { await pending; }
+      finally { if (sceneLinesLoading.get(s.id) === pending) sceneLinesLoading.delete(s.id); }
+    }
+    s.lines = sceneLinesCache.get(s.id);
     const inList = sceneList.find(x => x.id === s.id);
-    if (inList && inList !== s) inList.lines = lines;
+    if (inList && inList !== s) inList.lines = s.lines;
+    return s;
   } catch (e) {
-    console.error("Zeilen der Szene konnten nicht geladen werden:", s.id, e);
-    s.lines = s.lines || [];
+    if (e.name !== "AbortError") console.warn("Scene dialogue could not load:", s.id, e);
+    return null;
   }
-  return s;
+}
+async function prepareSceneSelection(s, statusId, allowed) {
+  const token = ++sceneChoiceToken;
+  const loaded = await ensureSceneLines(s);
+  if (token !== sceneChoiceToken || !allowed()) return false;
+  if (!loaded) {
+    status(statusId, tt("Scene could not load. Please try again.", "Szene konnte nicht geladen werden. Bitte erneut versuchen."), true);
+    return false;
+  }
+  return true;
 }
 
 let sceneListLoaded = false, sceneListLoading = null;
@@ -5276,7 +5313,7 @@ $("btn-check-scenes") && ($("btn-check-scenes").onclick = async () => {
 $("btn-load-scene").onclick = async () => {
   const s = sceneList[$("scene-select").value];
   if (!s || !iAmLogicalHost()) return;
-  await ensureSceneLines(s);
+  if (!await prepareSceneSelection(s, "lobby-status", iAmLogicalHost)) return;
   const blind = !!($("blind-mode") && $("blind-mode").checked);
   if (!isHost) {
     sendHost({ t: "hostCmd", cmd: "loadScene", sceneId: s.id, blind });
@@ -6293,7 +6330,7 @@ async function pickRandomScene() {
   }
   const s = scenePool.pop();
   if (!s) return;
-  await ensureSceneLines(s);
+  if (!await prepareSceneSelection(s, "lobby-status", () => isHost)) return;
   scene = JSON.parse(JSON.stringify(s));
   scene.blind = $("blind-mode") ? $("blind-mode").checked : false;
   clearSceneVideoState();
@@ -7005,7 +7042,7 @@ function populateDuelSceneSelect() {
 $("btn-duel-load-scene").onclick = async () => {
   const s = sceneList[$("duel-scene-select").value];
   if (!s) return;
-  await ensureSceneLines(s);
+  if (!await prepareSceneSelection(s, "duel-setup-status", iAmLogicalHost)) return;
   duelStagedScene = JSON.parse(JSON.stringify(s));
   $("duel-role-select").innerHTML = duelStagedScene.roles.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
   const playerOpts = players.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
@@ -7182,8 +7219,17 @@ async function getVoiceTrack() {
     try {
       const ctx = getCtx();
       const signal = sceneAudioController.signal;
-      const blob = await StudioReliability.downloadBlob(url, { signal, type: "audio/mpeg" });
-      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const decode = async source => {
+        const blob = await StudioReliability.downloadBlob(source, { signal, type: "audio/mpeg" });
+        return ctx.decodeAudioData(await blob.arrayBuffer());
+      };
+      let buf;
+      try { buf = await decode(url); }
+      catch (error) {
+        const raw = rawUrlFor(url);
+        if (signal.aborted || !raw) throw error;
+        buf = await decode(raw);
+      }
       if (signal.aborted) return null;
       voiceTrackCache.set(url, buf);
       return buf;
@@ -9962,36 +10008,46 @@ function assembleDuelMixes() {
 // ── Beide Versionen nacheinander abspielen, dann Abstimm-Screen zeigen ──
 async function decodeDuelData(data) {
   const ctx = getCtx();
+  const selectedScene = scene, token = mixLoadToken;
+  const stale = () => scene !== selectedScene || token !== mixLoadToken;
   const items = [];
   for (const track of data) {
     for (const item of track.items) {
       try {
         const ab = await toArrayBuffer(item.buf);
+        if (stale()) return [];
         items.push({ role: track.role, startAt: item.startAt, lineIdx: item.idx, buffer: processTakeBuffer(ctx, await ctx.decodeAudioData(ab), item.gate, item.effect || (roleOf(track.role) || {}).effect, item.fxAmount), effect: item.effect, fxAmount: item.fxAmount, boost: item.boost, pan: item.pan });
       } catch (e) { console.warn("Duell-Spur kaputt:", e); }
+      if (stale()) return [];
     }
   }
   // Alle anderen Rollen (nicht die Duell-Rolle) sprechen original, falls vorhanden
   if (scene && scene.lines) {
     const coveredIdx = new Set(items.map(i => i.lineIdx));
-    for (let i = 0; i < scene.lines.length; i++) {
-      const l = scene.lines[i];
-      if (!lineHasOrig(l) || coveredIdx.has(i)) continue;
+    const missing = selectedScene.lines.map((line, index) => ({line, index}))
+      .filter(({line, index}) => lineHasOrig(line) && !coveredIdx.has(index));
+    const originals = await runWithLimit(missing.map(({line: l, index: i}) => async () => {
+      if (stale()) return null;
       try {
         const buffer = await getLineOrigBuffer(l);
-        if (buffer) {
-          items.push({
-            role: null, startAt: l.t, lineIdx: i, buffer,
-            isOrig: true, boost: originalLineGain(l), origRoles: Array.isArray(l.chars) ? l.chars.slice() : []
-          });
-        }
+        if (buffer && !stale()) return {
+          role: null, startAt: l.t, lineIdx: i, buffer,
+          isOrig: true, boost: originalLineGain(l), origRoles: Array.isArray(l.chars) ? l.chars.slice() : []
+        };
       } catch {}
-    }
+      return null;
+    }), 3);
+    if (stale()) return [];
+    items.push(...originals.filter(Boolean));
   }
   return items;
 }
 
 async function loadDuelSequence(dataA, dataB, info) {
+  const token = ++mixLoadToken, selectedScene = scene;
+  const stale = () => token !== mixLoadToken || selectedScene !== scene;
+  pendingDuelGo = false;
+  window.__duelRunSequence = null;
   duelInfo = info;
   show("scr-playback");
   $("btn-replay").style.display = "none"; $("btn-download-audio").style.display = "none";
@@ -10002,30 +10058,47 @@ async function loadDuelSequence(dataA, dataB, info) {
   status("play-status", tt("🥊 Preparing both versions …", "🥊 Bereite beide Versionen vor …"));
 
   const itemsA = await decodeDuelData(dataA);
+  if (stale()) return;
   const itemsB = await decodeDuelData(dataB);
+  if (stale()) return;
 
   const pv = $("play-video");
   pv.src = sceneVideoSrc();
   attachPrompter(pv, $("play-prompter"), null);
   try { await waitCanPlay(pv, 30000); }
   catch (error) {
+    if (stale()) return;
     loadFailure("play-status", () => loadDuelSequence(dataA, dataB, info));
     return;
   }
 
+  if (stale()) return;
   const playOnce = (items, label) => new Promise(resolve => {
     status("play-status", "🥊 " + label);
     mixItems = items;
-    pv.addEventListener("ended", resolve, { once: true });
+    const signal = sceneAudioController.signal;
+    const finish = () => {
+      pv.removeEventListener("ended", finish);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    pv.addEventListener("ended", finish, { once: true });
+    signal.addEventListener("abort", finish, { once: true });
     playMix(false);
   });
 
+  let sequenceStarted = false;
   const runSequence = async () => {
+    if (sequenceStarted || stale()) return;
+    sequenceStarted = true;
     $("btn-duel-play-start").style.display = "none";
-    await playOnce(itemsA, "Take 1: " + nameOf(duelInfo.aId));
-    for (let s = 3; s >= 1; s--) { status("play-status", tt("⏳ Take 2 in ", "⏳ Take 2 in ") + s + " …"); await new Promise(r => setTimeout(r, 1000)); }
-    await playOnce(itemsB, "Take 2: " + nameOf(duelInfo.bId));
-    showDuelVote();
+    if (stale()) return;
+    await playOnce(itemsA, "Take 1: " + nameOf(info.aId));
+    if (stale()) return;
+    for (let s = 3; s >= 1; s--) { if (stale()) return; status("play-status", tt("⏳ Take 2 in ", "⏳ Take 2 in ") + s + " …"); await new Promise(r => setTimeout(r, 1000)); }
+    if (stale()) return;
+    await playOnce(itemsB, "Take 2: " + nameOf(info.bId));
+    if (!stale()) showDuelVote();
   };
 
   if (isHost) {
@@ -10035,6 +10108,7 @@ async function loadDuelSequence(dataA, dataB, info) {
   } else {
     status("play-status", tt("✅ Ready — waiting for the host to start …", "✅ Bereit — warte, bis der Host startet …"));
     window.__duelRunSequence = runSequence;   // Gast wartet auf die "duelPlayGo"-Nachricht vom Host
+    if (pendingDuelGo) { pendingDuelGo = false; runSequence(); }
   }
 }
 
@@ -10470,9 +10544,8 @@ async function loadMix(data, metaMsg) {
   // (unbesetzte Rollen + übersprungene Lines)
   if (scene.lines) {
     const hasIdx = data.some(t => t.items.some(i => i.idx != null));
-    const coveredIdx = new Set();
-    const playedRoles = new Set(data.map(t => t.role));
-    data.forEach(t => t.items.forEach(i => { if (i.idx != null) coveredIdx.add(i.idx); }));
+    const coveredIdx = new Set(mixItems.filter(i => i.lineIdx != null).map(i => i.lineIdx));
+    const playedRoles = new Set(mixItems.map(i => i.role));
     const missing = scene.lines.map((line, index) => ({ line, index })).filter(({ line, index }) => {
       return lineHasOrig(line) && !(hasIdx ? coveredIdx.has(index) : line.chars.some(c => playedRoles.has(c)));
     });
