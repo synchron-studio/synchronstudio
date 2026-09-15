@@ -1327,6 +1327,17 @@
   .diff-medium{background:rgba(255,201,92,.15);color:var(--amber)}
   .diff-zungenbrecher{background:rgba(255,77,85,.15);color:var(--hot)}
 </style>
+<style>
+.scene-entry{min-width:0;display:flex;flex-direction:column;gap:5px}
+.scene-entry .scene-tile{width:100%;flex:1}
+.scene-actions{display:flex;gap:4px}.scene-actions button{min-height:40px;padding:6px 8px;font-size:.8rem}
+.scene-actions .scene-favorite{flex:0 0 42px}.scene-actions .scene-preview{flex:1}
+.st-change{color:var(--amber);font-weight:bold}.st-download{display:block;padding:0 8px 8px;font-size:.75rem;color:var(--muted)}
+#scene-preview-dialog{width:min(92vw,660px);max-height:90dvh;background:#191920;color:var(--text);border:1px solid var(--amber);border-radius:12px;padding:16px}
+#scene-preview-dialog::backdrop{background:rgba(0,0,0,.8)}
+#scene-preview-video{width:100%;max-height:65dvh;background:#000}
+.player-readiness{display:block;font-size:.8rem;color:var(--amber);line-height:1.5;margin-top:4px}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -1539,6 +1550,8 @@
         <button class="primary" id="btn-load-scene" data-i18n="scene.load">Load</button>
       </div>
       <div class="role-filter" id="role-filter" data-i18n-aria="scene.filter" aria-label="Filter by role count"></div>
+      <div class="role-filter" id="scene-library-filter"></div>
+      <p class="sub" id="scene-library-note"></p>
       <div class="scene-grid" id="scene-grid"></div>
       <select id="scene-select" style="display:none"></select>
       <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:10px;font-size:.9rem;color:var(--muted)">
@@ -2036,10 +2049,15 @@
 <!-- ?v= muss bei jeder Version mitgezählt werden (gleiche Zahl wie APP_VERSION in client.js).
      Ohne das liefert der Browser den alten, gespeicherten Code zu der neuen Seite aus —
      dann sieht man eine halb aktualisierte Version und muss von Hand neu laden. -->
-  <script src="i18n.js?v=9.19.1"></script>
+  <dialog id="scene-preview-dialog" aria-labelledby="scene-preview-title">
+    <div class="row" style="justify-content:space-between"><h3 id="scene-preview-title"></h3><button type="button" id="scene-preview-close">Close</button></div>
+    <video id="scene-preview-video" controls playsinline preload="none"></video>
+    <p id="scene-preview-info" class="sub"></p>
+  </dialog>
+  <script src="i18n.js?v=9.20.0"></script>
   <script src="fix-webm-duration.js"></script>
-  <script src="reliability.js?v=9.19.1"></script>
-  <script src="client.js?v=9.19.1"></script>
+  <script src="reliability.js?v=9.20.0"></script>
+  <script src="client.js?v=9.20.0"></script>
   <!-- Besucherzähler (GoatCounter) — Stats: https://synchronstudio.goatcounter.com -->
   <script data-goatcounter="https://synchronstudio.goatcounter.com/count"
           async src="https://gc.zgo.at/count.js"></script>

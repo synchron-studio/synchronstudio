@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.19.1";
+const APP_VERSION = "9.20.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -768,6 +768,21 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.20.0", items: [
+    "★ Favoriten und die letzten 20 gespielten Szenen bleiben auf diesem Gerät gespeichert",
+    "👥 Gruppenfilter zeigt Szenen mit genau einer Rolle pro anwesender Person",
+    "▶ Kleine Vorschauclips für alle 121 Szenen: bis zu sechs Sekunden, Laden erst auf Klick",
+    "📥 Videogröße vor dem Laden sichtbar; neue und überarbeitete Szenen sind 45 Tage lang markiert",
+    "🎤 Verständlicher Gruppenstatus für Video-Fortschritt, Mikrofonfreigabe und Bereitschaft",
+    "🌍 Alle neuen Bedienelemente und Statusmeldungen auf Deutsch und Englisch"
+  ], itemsEn: [
+    "★ Favorites and the last 20 played scenes are saved on this device",
+    "👥 Group filter finds scenes with one role per person currently present",
+    "▶ Small preview clips for all 121 scenes: up to six seconds, downloaded only on click",
+    "📥 Video size shown before loading; new and updated scenes highlighted for 45 days",
+    "🎤 Clear group status for video progress, microphone permission and readiness",
+    "🌍 All new controls and status messages support German and English"
+  ]},
   { v: "9.19.1", items: [
     "🔍 Szenen-Dateicheck prüft auch Original-Tonspuren von noch nie geöffneten Szenen; nicht ladbare Dialogdaten werden als unvollständige Prüfung angezeigt",
     "🌐 Dateiprüfungen haben ein Zeitlimit und nutzen bei CDN-Problemen den Ersatzserver, statt unbegrenzt zu warten oder erreichbare Dateien als fehlend zu melden",
@@ -1499,7 +1514,7 @@ $("patchnotes-btn").onclick = () => {
   $("patchnotes-body").innerHTML = PATCH_NOTES.map(g => `
     <div>
       <div style="font-family:var(--font-display);color:var(--amber);margin-bottom:6px">v${g.v}</div>
-      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">${g.items.map(i => `<li>${i}</li>`).join("")}</ul>
+      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">${(getLang() === "en" && g.itemsEn ? g.itemsEn : g.items).map(i => `<li>${i}</li>`).join("")}</ul>
     </div>`).join("");
   $("patchnotes-overlay").style.display = "flex";
 };
@@ -2102,10 +2117,13 @@ async function getMicStream(preferredId) {
   throw lastErr;
 }
 async function buildMic() {
+  reportMicState("pending");
   try {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
     micStream = null;
     micStream = await getMicStream(micSettings.deviceId);
+    const acquired=micStream;
+    acquired.getAudioTracks().forEach(track=>track.addEventListener('ended',()=>{if(micStream===acquired)reportMicState('unknown');},{once:true}));
     try {
       const liveId = micStream.getAudioTracks()[0]?.getSettings?.().deviceId;
       if (usableMicId(liveId)) micSettings.deviceId = liveId;
@@ -2131,9 +2149,11 @@ async function buildMic() {
     micSrcNode.connect(micHP);
     applyMicTuning();
     startGateLoop();
+    reportMicState("ready");
     return true;
   } catch (e) {
     const n = e && e.name;
+    reportMicState(n === "NotAllowedError" || n === "SecurityError" ? "blocked" : "error");
     let msg;
     if (n === "NotAllowedError" || n === "SecurityError")
       msg = tt("🚫 Microphone is blocked. In the address bar click the lock icon → Microphone → Allow, then click “Test record”. (Brave: also try Shields ↓ for this site.)", "🚫 Mikrofon ist blockiert. In der Adressleiste aufs Schloss klicken → Mikrofon → Zulassen, danach auf „Test aufnehmen“. (Brave: Shields für diese Seite runterdrehen.)");
@@ -2972,7 +2992,7 @@ function gastBeitreten(code, wiederkehr, attempt, preferBroker) {
       if (handoffBrokerIdx != null || hostHandoffActive) handoffBrokerIdx = brokerIdx;
       // Handoff-Disconnect vorbei — ab hier bei Abbruch wieder normal nachfassen
       hostHandoffActive = false;
-      sendHost({ t: "hello", name: stripHostTag(myName), avatar: myAvatar, accessory: myAccessory, key: myKey });
+      sendHost({ t: "hello", name: stripHostTag(myName), avatar: myAvatar, accessory: myAccessory, key: myKey, micState: currentMicState() });
       if (wiederkehr) {
         wvBanner(tt("🔌 Reconnected — catching up …", "🔌 Wieder verbunden — hole den Stand …"));
       } else {
@@ -3823,6 +3843,7 @@ const duelVotes = {};         // Host: voterId -> "a" | "b"
 // RAUM VERLASSEN — sauberer Reset ohne Seiten-Reload
 // ═════════════════════════════════════════════════════════════
 function leaveRoom(statusMsg) {
+  closeLibraryPreview();
   // Bewusst gegangen: kein Wiederverbinden versuchen, und der Host soll den Platz
   // sofort räumen statt ihn zwei Minuten freizuhalten.
   absichtlichWeg = true;
@@ -4469,7 +4490,7 @@ function broadcastState(opts) {
 
 // Nachrichten, die der Host von Gästen annehmen darf (alles andere ignorieren)
 const HOST_IN = new Set([
-  "hello", "bye", "pickRole", "ready", "progress", "loadProg", "tracks", "trackUpdate",
+  "hello", "bye", "micState", "pickRole", "ready", "progress", "loadProg", "tracks", "trackUpdate",
   "ttt", "rps", "dice", "draw", "rate", "mg", "emoji", "premReady", "premProg", "cb",
   "duelSubmit", "duelVote", "hostCmd", "packInfo"
 ]);
@@ -4622,6 +4643,7 @@ function handleMsg(msg, conn) {
       };
       const samePeer = players.find(p => p.id === conn.peer);
       if (samePeer) {
+        samePeer.micState = ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown";
         if (msg.name) samePeer.name = stripHostTag(msg.name);
         if (msg.avatar) samePeer.avatar = msg.avatar;
         if (msg.accessory) samePeer.accessory = msg.accessory;
@@ -4634,6 +4656,7 @@ function handleMsg(msg, conn) {
 
       const rueck = msg.key ? players.find(p => p.key === msg.key) : null;
       if (rueck) {
+        rueck.micState = ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown";
         const alteId = rueck.id;
         clearTimeout(rueckkehrTimer.get(msg.key)); rueckkehrTimer.delete(msg.key);
         rueck.id = conn.peer;
@@ -4674,7 +4697,7 @@ function handleMsg(msg, conn) {
         break;
       }
       if (players.length >= 8) { conn.send({ t: "full", cap: 8 }); setTimeout(() => conn.close(), 500); break; }
-      players.push({ id: conn.peer, key: msg.key || null, name: stripHostTag(msg.name), avatar: msg.avatar || null, accessory: msg.accessory || null, role: null, ready: false, done: 0, total: 0, loadPct: 0, videoReady: false });
+      players.push({ micState: ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown", id: conn.peer, key: msg.key || null, name: stripHostTag(msg.name), avatar: msg.avatar || null, accessory: msg.accessory || null, role: null, ready: false, done: 0, total: 0, loadPct: 0, videoReady: false });
       applyLogicalHostLabels();
       if (scene) { if (localVideoBuf) sendLocalVideo(conn); else conn.send({ t: "scene", scene }); }
       conn.send({ t: "drawState", drawBoard, drawEpoch });
@@ -4736,6 +4759,11 @@ function handleMsg(msg, conn) {
       break;
     }
     case "progress": { const p = players.find(p => p.id === conn.peer); if (p) { p.done = msg.done; p.total = msg.total; } broadcastState({ throttle: true }); break; }
+    case "micState": {
+      const p=players.find(p=>p.id===conn?.peer);
+      if(p&&['ready','blocked','error','pending','unknown'].includes(msg.state)) {p.micState=msg.state;broadcastState();}
+      break;
+    }
     case "loadProg": {
       const p = players.find(p => p.id === conn.peer);
       if (p) { p.loadPct = msg.pct | 0; p.videoReady = !!msg.ready; }
@@ -5142,6 +5170,85 @@ async function loadSceneList(force) {
 // ── Szenen-Auswahl als Bild-Raster ──
 // Das <select> bleibt als unsichtbare Quelle der Wahrheit erhalten, damit der restliche
 // Code (Laden-Knopf, Duell, Roulette) unverändert damit weiterarbeiten kann.
+function readSceneIds(key) {
+  try { const a=JSON.parse(localStorage.getItem(key)||'[]'); return Array.isArray(a)?[...new Set(a.filter(x=>typeof x==='string'))].slice(0,200):[]; } catch { return []; }
+}
+let sceneFavorites = new Set(readSceneIds('ss_scene_favorites'));
+let recentScenes = readSceneIds('ss_scene_recent').slice(0,20);
+let sceneLibraryFilter = 'all', libraryGroupCount = -1;
+function persistSceneIds(key, value) { try { localStorage.setItem(key,JSON.stringify(value)); } catch {} }
+function rememberPlayedScene() {
+  if (!scene?.id || !sceneList.some(s=>s.id===scene.id)) return;
+  recentScenes=[scene.id,...recentScenes.filter(id=>id!==scene.id)].slice(0,20);
+  persistSceneIds('ss_scene_recent',recentScenes);
+}
+function groupSize() { return Math.max(1,players.filter(p=>!p.offline&&!p.eliminated).length); }
+function sceneSizeText(bytes) {
+  if (!Number.isFinite(bytes)||bytes<=0) return tt('Size unavailable','Größe unbekannt');
+  return new Intl.NumberFormat(getLang()==='de'?'de-DE':'en-US',{maximumFractionDigits:1}).format(bytes/1000000)+' MB';
+}
+function sceneChangeLabel(s) {
+  const when=Date.parse(s.catalogChangedAt||'');
+  if (!Number.isFinite(when)||Date.now()-when>45*86400000) return '';
+  return s.catalogChange==='updated'?tt('Updated','Überarbeitet'):s.catalogChange==='new'?tt('New','Neu'):'';
+}
+function renderLibraryFilters() {
+  const el=$('scene-library-filter');if(!el)return;
+  const options=[['all',tt('All scenes','Alle Szenen')],['favorites',tt('★ Favorites','★ Favoriten')],['recent',tt('Recently played','Zuletzt gespielt')],['group',tt('Fits our group','Passt zur Gruppe')+' ('+groupSize()+')']];
+  el.innerHTML=options.map(([id,label])=>`<button type="button" class="rf-chip${sceneLibraryFilter===id?' on':''}" data-library="${id}" aria-pressed="${sceneLibraryFilter===id}">${esc(label)}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{sceneLibraryFilter=b.dataset.library;renderSceneGrid();});
+  $('scene-library-note').textContent=sceneLibraryFilter==='group'?tt('One role per person currently here. Offline and eliminated players are not counted.','Eine Rolle pro anwesender Person. Offline-Spieler und ausgeschiedene Spieler zählen nicht mit.'):tt('Favorites and history are saved on this device. Video size excludes separate voice clips.','Favoriten und Verlauf bleiben auf diesem Gerät. Videogröße ohne separate Sprachclips.');
+}
+let libraryPreviewScene=null;
+function closeLibraryPreview() {
+  const dialog=$('scene-preview-dialog'),v=$('scene-preview-video');
+  v.pause();v.removeAttribute('src');v.load();libraryPreviewScene=null;
+  if(dialog.open)dialog.close();
+}
+function previewLabels() {
+  $('scene-preview-close').textContent=tt('Close','Schließen');
+  if(libraryPreviewScene){
+    $('scene-preview-title').textContent=sceneTitleDisplay(libraryPreviewScene.title);
+    $('scene-preview-info').textContent=tt('Preview up to 6 seconds · ','Vorschau bis zu 6 Sekunden · ')+sceneSizeText(libraryPreviewScene.previewBytes);
+  }
+}
+function openLibraryPreview(s) {
+  if(!s?.previewUrl)return;
+  closeLibraryPreview();libraryPreviewScene=s;previewLabels();
+  const v=$('scene-preview-video');
+  v.src=s.previewUrl;
+  $('scene-preview-dialog').showModal();
+  v.play().catch(()=>{}); // Native controls permit a second tap when autoplay is blocked.
+}
+$('scene-preview-close').onclick=closeLibraryPreview;
+$('scene-preview-dialog').addEventListener('close',()=>{if(!$('scene-preview-dialog').open&&libraryPreviewScene)closeLibraryPreview();});
+$('scene-preview-video').addEventListener('error',()=>{$('scene-preview-info').textContent=tt('Preview could not load. Close and try again.','Vorschau konnte nicht geladen werden. Schließen und erneut versuchen.');});
+document.addEventListener('ss-langchange',()=>{renderLibraryFilters();previewLabels();});
+
+let localMicState='unknown';
+function currentMicState(){return micStream?.getAudioTracks().some(t=>t.readyState==='live')?'ready':localMicState==='ready'?'unknown':localMicState;}
+function reportMicState(state){
+  localMicState=state;
+  const me=players.find(p=>p.id===myId);if(me)me.micState=state;
+  if(isHost)broadcastState();else sendHost({t:'micState',state});
+  renderPlayers();
+}
+function playerReadiness(p){
+  if(p.offline)return tt('Connection lost — reconnecting','Verbindung weg — Wiederverbindung läuft');
+  if(p.eliminated)return tt('Spectating','Zuschauer');
+  const mic=p.id===myId?currentMicState():p.micState;
+  const messages=[];
+  if(scene?.videoUrl&&!p.videoReady)messages.push(tt('Video loading, ','Video lädt, ')+Math.max(0,Math.min(100,p.loadPct||0))+'%');
+  if(mic==='blocked')messages.push(tt('Microphone access blocked','Mikrofonfreigabe blockiert'));
+  else if(mic==='error')messages.push(tt('Microphone unavailable','Mikrofon nicht verfügbar'));
+  else if(mic==='pending')messages.push(tt('Waiting for microphone permission','Wartet auf Mikrofonfreigabe'));
+  else if(mic!=='ready'&&!p.ready)messages.push(tt('Microphone not checked yet','Mikrofon noch nicht geprüft'));
+  if(messages.length)return messages.join(' · ');
+  if(p.ready)return tt('Ready','Bereit');
+  if(!rolesOfPlayer(p).length)return tt('Choose a role','Rolle auswählen');
+  return tt('Video and microphone ready — confirm ready','Video und Mikrofon bereit — Bereitschaft bestätigen');
+}
+
 let sceneRoleFilter = "all";   // "all" | "2" | "3" | … | "7p" (≥7)
 
 function renderRoleFilter() {
@@ -5172,6 +5279,7 @@ function renderRoleFilter() {
 }
 
 function renderSceneGrid(filter) {
+  renderLibraryFilters();
   const grid = $("scene-grid");
   if (!grid) return;
   const q = (filter == null ? ($("scene-search") ? $("scene-search").value : "") : filter).trim().toLowerCase();
@@ -5179,17 +5287,22 @@ function renderSceneGrid(filter) {
     .map((s, i) => ({ s, i }))
     .filter(({ s }) => {
       const n = (s.roles || []).length;
+      if(sceneLibraryFilter==='favorites'&&!sceneFavorites.has(s.id))return false;
+      if(sceneLibraryFilter==='recent'&&!recentScenes.includes(s.id))return false;
+      if(sceneLibraryFilter==='group'&&n!==groupSize())return false;
       if (sceneRoleFilter === "7p") { if (n < 7) return false; }
       else if (sceneRoleFilter !== "all" && n !== parseInt(sceneRoleFilter, 10)) return false;
       if (!q) return true;
       return (sceneTitleDisplay(s.title) + " " + s.title + " " + (s.roles || []).map(r => r.name).join(" ")).toLowerCase().includes(q);
     });
 
+  if(sceneLibraryFilter==='recent')hits.sort((a,b)=>recentScenes.indexOf(a.s.id)-recentScenes.indexOf(b.s.id));
   if (!sceneList.length) {
     grid.innerHTML = `<p class="sub" style="grid-column:1/-1">${tt("Loading scenes… wait a moment and reload the page.", "Szenen laden … kurz warten und Seite neu laden.")}</p>`;
     return;
   }
   if (!hits.length) {
+    if($("scene-select"))$("scene-select").selectedIndex=-1;
     const tip = sceneRoleFilter !== "all" ? tt(" with this role filter", " mit diesem Rollen-Filter") : "";
     grid.innerHTML = `<p class="sub" style="grid-column:1/-1">${tt("No scene matches", "Keine Szene passt")}${q ? " “" + esc(q) + "”" : ""}${tip}.</p>`;
     return;
@@ -5205,13 +5318,24 @@ function renderSceneGrid(filter) {
     const faces = Object.values(s.avatars || {}).slice(0, 4)
       .map(src => `<img src="${esc(assetUrl(src))}" alt="" loading="lazy" decoding="async">`)
       .join("");
-    return `<button type="button" class="scene-tile${String(i) === current ? " sel" : ""}" data-i="${i}">
+    return `<div class="scene-entry"><button type="button" class="scene-tile${String(i) === current ? " sel" : ""}" data-i="${i}">
       <span class="st-thumb">${faces ? `<span class="st-faces">${faces}</span>` : `<span class="st-ph">🎬</span>`}<span class="st-badge">${roleCountLabel(s.roles.length).replace(" ", "&nbsp;")}</span></span>
       <span class="st-title">${esc(sceneTitleDisplay(s.title))}</span>
-      <span class="st-meta">${d ? d.emoji + " " + esc(d.label) : "—"}${(s.lines && s.lines.length) || s.lineCount ? " · " + ((s.lines && s.lines.length) || s.lineCount) + " lines" : ""}</span>
-    </button>`;
+      ${sceneChangeLabel(s)?`<span class="st-meta st-change">${sceneChangeLabel(s)}</span>`:""}
+      <span class="st-meta">${d ? d.emoji + " " + esc(d.label) : "—"}${(s.lines && s.lines.length) || s.lineCount ? " · " + ((s.lines && s.lines.length) || s.lineCount) + tt(" lines", " Zeilen") : ""}</span>
+      <span class="st-download">${tt('Video: ','Video: ')}${sceneSizeText(s.videoBytes)}</span>
+    </button><div class="scene-actions">
+      <button type="button" class="scene-favorite" data-scene="${i}" aria-pressed="${sceneFavorites.has(s.id)}" aria-label="${esc((sceneFavorites.has(s.id)?tt('Remove favorite: ','Favorit entfernen: '):tt('Add favorite: ','Favorit hinzufügen: '))+sceneTitleDisplay(s.title))}">${sceneFavorites.has(s.id)?'★':'☆'}</button>
+      <button type="button" class="scene-preview" data-scene="${i}" ${s.previewUrl?'':'disabled'}>${tt('▶ Preview','▶ Vorschau')}</button>
+    </div></div>`;
   }).join("");
 
+  grid.querySelectorAll('.scene-favorite').forEach(b=>b.onclick=()=>{
+    const id=sceneList[Number(b.dataset.scene)].id;
+    sceneFavorites.has(id)?sceneFavorites.delete(id):sceneFavorites.add(id);
+    persistSceneIds('ss_scene_favorites',[...sceneFavorites]);renderSceneGrid();
+  });
+  grid.querySelectorAll('.scene-preview').forEach(b=>b.onclick=()=>openLibraryPreview(sceneList[Number(b.dataset.scene)]));
   grid.querySelectorAll(".scene-tile").forEach(tile => {
     tile.onclick = () => {
       const alreadyPicked = tile.classList.contains("sel");
@@ -5970,9 +6094,7 @@ function playerCard(p) {
   if (scene && scene.videoUrl) {
     if (!p.videoReady) {
       const pct = Math.max(0, Math.min(100, p.loadPct || 0));
-      loadHtml = `<div class="pbar load"><i style="width:${pct}%"></i></div><span class="pload">📥 Video ${pct}%</span>`;
-    } else if (!p.total) {
-      loadHtml = `<span class="pload done">📥 ${tt("Video ready", "Video fertig")}</span>`;
+      loadHtml = `<div class="pbar load"><i style="width:${pct}%"></i></div>`;
     }
   }
   const micDot = p.id === myId ? `<span id="mic-live-dot" title="${esc(tt("Your mic — lights up when sound is coming in", "Dein Mikro — leuchtet, wenn gerade Ton ankommt"))}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3a3a46;margin-left:6px"></span>` : "";
@@ -5997,7 +6119,8 @@ function playerCard(p) {
     <div class="pinfo">
       <span class="pname">${esc(p.name)}${micDot}</span>
       ${p.eliminated ? '<span class="prole" style="color:var(--hot)">' + tt("🔪 eliminated", "🔪 eliminiert") + '</span>' : `<span class="prole ${role ? "" : "empty"}">${role ? "🎭 " + esc(role) : tt("no role yet", "noch keine Rolle")}</span>`}
-      ${wegTag}${p.ready && !p.total ? '<span class="tag" style="color:var(--ok)">' + tt('ready', 'bereit') + '</span>' : ""}${loadHtml}${prog}
+      <span class="player-readiness">${esc(playerReadiness(p))}</span>
+      ${wegTag}${loadHtml}${prog}
     </div>
     ${acts}
   </div>`;
@@ -6008,7 +6131,11 @@ function escOfflineCountdown(p) {
     ? tt(" · hopefully back soon (", " · kommt hoffentlich zurück (") + Math.floor(restSek / 60) + ":" + String(restSek % 60).padStart(2, "0") + ")"
     : "");
 }
-function renderPlayers() { $("player-list").innerHTML = players.map(playerCard).join(""); }
+function renderPlayers() {
+  const me=players.find(p=>p.id===myId);if(me)me.micState=currentMicState();
+  $("player-list").innerHTML = players.map(playerCard).join("");
+  const n=groupSize();if(n!==libraryGroupCount){libraryGroupCount=n;renderSceneGrid();}
+}
 // Offline-Restzeit: nur Text-Tags ticken, kein kompletter Listen-Rebuild
 setInterval(() => {
   if (!players.some(p => p.offline)) return;
@@ -7102,6 +7229,7 @@ $("btn-duel-start").onclick = () => {
 };
 
 function startBooth() {
+  rememberPlayedScene();
   stopLobbyPreview();
   const rid = myRole();
   if (rid == null) {                      // Zuschauer
@@ -8125,6 +8253,7 @@ function stopSceneRecordings() {
 let rtRecorder = null, rtChunks = [];
 
 async function startRealtime() {
+  rememberPlayedScene();
   const signal = sceneAudioController.signal, selectedScene = scene;
   const stale = () => signal.aborted || selectedScene !== scene;
   stopLobbyPreview();

@@ -432,3 +432,42 @@ test('leaving during realtime countdown cannot start recording afterwards', asyn
   const pending=w.start();await delay(0);w.cancel();w.finishCountdown();await pending;
   assert.equal(w.started,0);
 });
+
+test('scene favorites persist, history deduplicates and group filter excludes offline players', t => {
+  const w=app(t, `sceneList=[{id:'one',title:'One',lines:[],roles:[{id:1,name:'A'}],videoBytes:1000000},{id:'two',title:'Two',lines:[],roles:[{id:1,name:'A'},{id:2,name:'B'}],videoBytes:2000000}];
+    players=[{id:'me',name:'Me'},{id:'friend',name:'Friend'},{id:'gone',name:'Gone',offline:true}];
+    $('scene-select').innerHTML='<option value="0">One</option><option value="1">Two</option>';
+    window.render=renderSceneGrid;
+    window.filter=k=>{sceneLibraryFilter=k;renderSceneGrid();};
+    window.play=id=>{scene=sceneList.find(s=>s.id===id);rememberPlayedScene();};`);
+  w.render();w.document.querySelector('.scene-favorite[data-scene="1"]').click();
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('ss_scene_favorites')),['two']);
+  w.filter('favorites');assert.equal(w.document.querySelectorAll('.scene-tile').length,1);
+  assert.equal(w.document.querySelector('.scene-tile').dataset.i,'1');
+  w.filter('group');assert.equal(w.document.querySelectorAll('.scene-tile').length,1);
+  w.play('one');w.play('two');w.play('one');
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('ss_scene_recent')),['one','two']);
+  w.filter('recent');assert.equal(w.document.querySelector('.scene-tile').dataset.i,'0');
+  assert.equal(w.document.getElementById('scene-preview-video').hasAttribute('src'),false);
+});
+
+test('library labels and player readiness switch between German and English', t => {
+  const w=app(t, `scene={videoUrl:'test.mp4',roles:[]};
+    window.readiness=playerReadiness;window.badge=sceneChangeLabel;window.filters=renderLibraryFilters;`);
+  w.setLang('de');w.filters();
+  assert.ok(w.document.getElementById('scene-library-filter').textContent.includes('Favoriten'));
+  assert.match(w.readiness({id:'other',loadPct:68,micState:'blocked'}),/Video lädt, 68%.*blockiert/);
+  w.setLang('en');w.filters();
+  assert.ok(w.document.getElementById('scene-library-filter').textContent.includes('Recently played'));
+  assert.match(w.readiness({id:'other',loadPct:68,micState:'blocked'}),/Video loading, 68%.*blocked/);
+  assert.equal(w.badge({catalogChangedAt:new Date().toISOString(),catalogChange:'updated'}),'Updated');
+  assert.equal(w.badge({catalogChangedAt:'2000-01-01',catalogChange:'new'}),'');
+});
+
+test('microphone status updates apply only to the sending player', t => {
+  const w=app(t, `isHost=true;players=[{id:'a'},{id:'b'}];broadcastState=()=>{};
+    window.update=s=>handleMsg({t:'micState',state:s,playerId:'b'},{peer:'a'});
+    window.roster=()=>players;`);
+  w.update('blocked');assert.equal(w.roster()[0].micState,'blocked');assert.equal(w.roster()[1].micState,undefined);
+  w.update('invalid');assert.equal(w.roster()[0].micState,'blocked');
+});

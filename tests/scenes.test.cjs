@@ -13,10 +13,13 @@ test('all indexed scenes have metadata, valid timings and existing asset paths',
   const ids = new Set();
   const missing = new Set();
   const walk = value => {
-    if (typeof value === 'string' && value.startsWith('scenes/') && !files.has(value)) missing.add(value);
+    if (typeof value === 'string' && /^(scenes|previews)\//.test(value) && !files.has(value)) missing.add(value);
     else if (value && typeof value === 'object') Object.values(value).forEach(walk);
   };
   for (const scene of scenes) {
+    assert.ok(scene.videoBytes > 0, 'missing download size: ' + scene.id);
+    assert.ok(scene.previewBytes > 0 && scene.previewBytes < 500000, 'preview size: ' + scene.id);
+    assert.ok(scene.previewUrl.startsWith('previews/'), 'missing preview: ' + scene.id);
     assert.ok(!ids.has(scene.id), 'duplicate scene ID: ' + scene.id);
     ids.add(scene.id);
     const data = read('scenedata/' + scene.id + '.json');
