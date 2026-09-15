@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.16.0";
+const APP_VERSION = "9.17.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -759,6 +759,12 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.17.0", items: [
+    "🎬 Vier neue Szenen: Bleach — Orihimes Prinzessinnen-Fantasie, Chainsaw Man — Reze Arc: Im Meer, KonoSuba — Schere, Stein, Papier und Bleach — Welcome to My Soul Society",
+    "🗣 82 Dialog- und Geräuschzeilen mit deutschen Texten, Original-Anhörspuren und insgesamt 13 Rollen",
+    "📥 Alle vier Videos in voller Länge, mit separater Hintergrundspur und auf rund 1,5–7,9 MB komprimiert",
+    "🎭 Neue Charakterbilder in der Profilauswahl; Lautstärke des mehrfach vorhandenen KonoSuba-Originalchors ausgeglichen"
+  ]},
   { v: "9.16.0", items: [
     "🖼 Sae vs Rin: 13 falsche Bildpfade korrigiert; Verweise auf vier nicht vorhandene Charakterbilder entfernt",
     "🌐 Szenenwechsel stoppt alte Downloads wirklich — mehr Bandbreite für die aktuelle Szene",
@@ -1504,6 +1510,19 @@ function saveMic() { try { localStorage.setItem("ss_mic", JSON.stringify(micSett
 // ═════════════════════════════════════════════════════════════
 const AVATAR_EMOJIS = ["😎","🔥","💀","🎭","🐻","🤖","👻","🦈","🐸","🎃","👑","🥷","🧛","🦊","🐵","⚡"];
 const AVATAR_CHARS = [
+  { img: "scenes/orihime_bossy_princess/orihime.png", label: "Orihime · Bleach — Orihimes Prinzessinnen-Fantasie" },
+  { img: "scenes/orihime_bossy_princess/ichigo.png", label: "Ichigo · Bleach — Orihimes Prinzessinnen-Fantasie" },
+  { img: "scenes/orihime_bossy_princess/rukia.png", label: "Rukia · Bleach — Orihimes Prinzessinnen-Fantasie" },
+  { img: "scenes/reze_in_the_sea/denji.png", label: "Denji · Chainsaw Man — Reze Arc: Im Meer" },
+  { img: "scenes/reze_in_the_sea/reze.png", label: "Reze · Chainsaw Man — Reze Arc: Im Meer" },
+  { img: "scenes/konosuba_rock_paper_scissors/kazuma.png", label: "Kazuma · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/konosuba_rock_paper_scissors/aqua.png", label: "Aqua · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/konosuba_rock_paper_scissors/megumin.png", label: "Megumin · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/konosuba_rock_paper_scissors/darkness.png", label: "Darkness · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/konosuba_rock_paper_scissors/wiz.png", label: "Wiz · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/konosuba_rock_paper_scissors/wagon_rider.png", label: "Wagon Rider · KonoSuba — Schere, Stein, Papier" },
+  { img: "scenes/welcome_my_soul_society/aizen.png", label: "Aizen · Bleach — Welcome to My Soul Society" },
+  { img: "scenes/welcome_my_soul_society/yhwach.png", label: "Yhwach · Bleach — Welcome to My Soul Society" },
   { img: "scenes/jackpot_konosuba/chris.png", label: "Chris" },
   { img: "scenes/jackpot_konosuba/kazuma.png", label: "Kazuma" },
   { img: "scenes/reze_fireworks/reze.png", label: "Reze" },
@@ -7206,6 +7225,9 @@ async function getLineOrigBuffer(l) {
   if (full) return sliceBuffer(full, l.t, l.end);
   return null;
 }
+function originalLineGain(l) {
+  return Number.isFinite(l?.origGain) ? Math.max(0, Math.min(1, l.origGain)) : 1;
+}
 function lineHasOrig(l) { return !!(l.orig || scene.voiceTrack); }
 
 const origCache = new Map();
@@ -9943,7 +9965,7 @@ async function decodeDuelData(data) {
         if (buffer) {
           items.push({
             role: null, startAt: l.t, lineIdx: i, buffer,
-            isOrig: true, origRoles: Array.isArray(l.chars) ? l.chars.slice() : []
+            isOrig: true, boost: originalLineGain(l), origRoles: Array.isArray(l.chars) ? l.chars.slice() : []
           });
         }
       } catch {}
@@ -10446,7 +10468,7 @@ async function loadMix(data, metaMsg) {
           const buffer = await getLineOrigBuffer(l);
           if (stale()) return;
           if (buffer) mixItems.push({ role: null, startAt: l.t, lineIdx: i, buffer,
-            isOrig: true, origRoles: Array.isArray(l.chars) ? l.chars.slice() : [] });
+            isOrig: true, boost: originalLineGain(l), origRoles: Array.isArray(l.chars) ? l.chars.slice() : [] });
         } catch { console.warn("Original fehlt für Line", i); }
         if (stale()) return;
         done++;

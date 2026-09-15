@@ -52,9 +52,12 @@ function app(t, exports = '') {
 }
 
 test('whole client starts with Safari recording format support', t => {
-  const w = app(t, 'window.testMime = pickMime();');
+  const w = app(t, 'window.testMime = pickMime(); window.testVersion = APP_VERSION; window.latestPatch = PATCH_NOTES[0].v;');
   assert.equal(w.testMime, 'audio/mp4');
-  assert.match(w.document.getElementById('patchnotes-btn').textContent, /9\.16\.0/);
+  assert.ok(w.document.getElementById('patchnotes-btn').textContent.includes(w.testVersion));
+  assert.equal(w.latestPatch, w.testVersion);
+  assert.ok(w.document.querySelector('script[src^="client.js?"]').src.endsWith('v=' + w.testVersion));
+  assert.ok(w.document.querySelector('script[src^="reliability.js?"]').src.endsWith('v=' + w.testVersion));
 });
 
 test('a broken peer does not prevent broadcasting to other players', t => {
@@ -260,4 +263,24 @@ test('direct video fallback discards an unusable downloaded blob', async t => {
   await delay(0);
   assert.equal(w.ready(), true);
   assert.equal(w.source(), 'https://example.com/video.mp4');
+});
+
+test('shared original chorus gain is preserved in normal and duel mixes', async t => {
+  const w = app(t, `scene = {videoUrl:'test.mp4',roles:[],lines: Array.from({length:5}, (_,i) => ({t:0,end:2,chars:[i+1],orig:'chorus.mp3',origGain:0.2}))};
+    getLineOrigBuffer = async () => ({duration:2});
+    StudioReliability.waitMedia = async () => {};
+    window.load = () => loadMix([]);
+    window.duel = () => decodeDuelData([]);
+    window.items = () => mixItems;
+    window.originalGain = originalLineGain;`);
+  await w.load();
+  const normal = w.items();
+  const duel = await w.duel();
+  for (const mix of [normal, duel]) {
+    assert.equal(mix.length, 5);
+    assert.ok(mix.every(item => item.isOrig && item.boost === 0.2));
+    assert.equal(mix.reduce((sum,item)=>sum+item.boost,0),1);
+  }
+  assert.equal(w.originalGain({}),1);
+  assert.equal(w.originalGain({origGain:Infinity}),1);
 });
