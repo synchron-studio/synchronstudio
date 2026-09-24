@@ -471,3 +471,90 @@ test('microphone status updates apply only to the sending player', t => {
   w.update('blocked');assert.equal(w.roster()[0].micState,'blocked');assert.equal(w.roster()[1].micState,undefined);
   w.update('invalid');assert.equal(w.roster()[0].micState,'blocked');
 });
+
+test('guest profile data is sanitized before it reaches other players', t => {
+  const w = app(t, `isHost=true;myId='host';players=[{id:'host',name:'Host'}];
+    window.hello = msg => handleMsg(Object.assign({t:'hello'}, msg), {peer:'evil', open:true, send(){}});
+    window.roster = () => players;`);
+  w.hello({ name: '<img src=x onerror=alert(1)>' + 'x'.repeat(60), key: 'k1',
+    avatar: { type: 'emoji', value: '<img src=x onerror=alert(1)>' }, accessory: '__proto__' });
+  const guest = w.roster().find(p => p.id === 'evil');
+  assert.ok(guest.name.length <= 24);
+  assert.equal(guest.avatar, null);
+  assert.equal(guest.accessory, null);
+  assert.equal(w.document.querySelector('#player-list img'), null, 'no injected markup');
+  assert.ok(w.document.getElementById('player-list').textContent.includes('<img'), 'name shown as plain text');
+});
+
+test('ratings only count 1-5 stars for other players', t => {
+  const w = app(t, `isHost=true;myId='host';ratingDone=true;
+    players=[{id:'host',name:'Host'},{id:'a',name:'A'},{id:'b',name:'B'}];
+    window.rate = (voter, scores, buddy) => collectRating(voter, scores, buddy);
+    window.saved = id => allRatings.get(id);`);
+  w.rate('a', { a: 5, b: 9999, host: 4, ghost: 5, bogus: 2.5 }, 'a');
+  assert.deepEqual(JSON.parse(JSON.stringify(w.saved('a'))), { scores: { host: 4 }, buddy: null });
+});
+
+test('duel votes ignore invalid choices and non-voters', t => {
+  const w = app(t, `isHost=true;myId='host';broadcast=()=>{};showDuelVoteLive=()=>{};finishDuelVote=()=>{};
+    players=[{id:'host'},{id:'a'},{id:'b'}]; duelInfo={roleId:1,aId:'a',bId:'b'};
+    window.vote = (id, c) => collectDuelVote(id, c); window.votes = () => Object.assign({}, duelVotes);`);
+  w.vote('host', 'x'); w.vote('a', 'a'); w.vote('host', 'b');
+  assert.deepEqual(JSON.parse(JSON.stringify(w.votes())), { host: 'b' });
+});
+
+test('player list is not rebuilt when nothing changed', t => {
+  const w = app(t, `players=[{id:'p1',name:'One'}]; window.render = renderPlayers;`);
+  w.render();
+  const list = w.document.getElementById('player-list');
+  const first = list.firstElementChild;
+  w.render();
+  assert.equal(list.firstElementChild, first, 'same DOM node kept');
+});
+
+test('effect oscillators stop together with their audio source', t => {
+  const w = app(t, `window.stopped = 0;
+    const node = () => ({ connect(){}, disconnect(){}, gain:{value:0}, frequency:{value:0}, Q:{value:0}, pan:{value:0},
+      delayTime:{value:0}, threshold:{value:0}, knee:{value:0}, ratio:{value:0}, attack:{value:0}, release:{value:0} });
+    window.fakeCtx = { createGain: node, createStereoPanner: node, createBiquadFilter: node, createDelay: node,
+      createDynamicsCompressor: node, createWaveShaper: node,
+      createOscillator: () => Object.assign(node(), { start(){}, stop(){ window.stopped++; } }) };
+    window.link = (src, effect) => connectChain(src, fakeCtx, { effect }, {});`);
+  const src = new w.EventTarget();
+  src.connect = () => {};
+  w.link(src, 'underwater');
+  assert.equal(w.stopped, 0);
+  src.dispatchEvent(new w.Event('ended'));
+  assert.equal(w.stopped, 1);
+});
+
+test('leaving mid-premiere clears cinema mode and round leftovers', t => {
+  const w = app(t, `window.enter = () => { enterCinemaMode(); premiereLocked = true; pendingRate = true; duelInfo = {aId:'a'}; };
+    window.leave = () => leaveRoom();
+    window.state = () => ({ locked: premiereLocked, rate: pendingRate, duel: duelInfo });`);
+  w.enter();
+  assert.ok(w.document.body.classList.contains('cinema'));
+  w.leave();
+  assert.equal(w.document.body.classList.contains('cinema'), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(w.state())), { locked: false, rate: false, duel: null });
+});
+
+test('room buttons wait for the deferred connection library', async t => {
+  const w = app(t, `window.runs = 0; window.wait = () => withPeerLib(() => window.runs++);`);
+  const lib = w.Peer;
+  delete w.Peer;
+  w.wait();
+  await delay(20);
+  assert.equal(w.runs, 0);
+  assert.match(w.document.getElementById('start-status').textContent, /connection module|Verbindungsmodul/);
+  w.Peer = lib;
+  await delay(300);
+  assert.equal(w.runs, 1);
+});
+
+test('rapid duplicate clicks play a single click sound', t => {
+  const w = app(t, `window.samples = 0; window.Audio = function () { window.samples++; return { play: () => Promise.resolve(), addEventListener(){} }; };
+    window.click = () => SFX.click();`);
+  w.click(); w.click();
+  assert.equal(w.samples, 1);
+});

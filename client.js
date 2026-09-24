@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.20.0";
+const APP_VERSION = "9.21.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -298,7 +298,7 @@ function clearSceneCaches() {
 // 5 Ziffern — leichter tippbar als 6, deutlich sicherer als 4 (nur Freunde mit Code, kein Lobby-Browser)
 const randCode = () => String(Math.floor(10000 + Math.random() * 90000));
 const isRoomCode = (c) => /^\d{5}$/.test(String(c || "").trim());
-const esc = (s) => String(s).replace(/[<>&"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+const esc = (s) => String(s).replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]));
 
 
 
@@ -693,8 +693,16 @@ const SFX = (() => {
       if (i >= steps) { clearInterval(iv); try { a.pause(); } catch {} active.delete(a); }
     }, step);
   }
+  // Viele Knöpfe spielen selbst einen Klick UND der globale Klick-Lauscher auch —
+  // ohne Sperre klang jeder zweite Klick doppelt (und erzeugte zwei Audio-Objekte).
+  let lastClickT = 0;
   return {
-    click: () => { if (!sample("click.mp3", 0.42)) tone(950, 0.045, "square", 0.05); },
+    click: () => {
+      const now = performance.now();
+      if (now - lastClickT < 90) return;
+      lastClickT = now;
+      if (!sample("click.mp3", 0.42)) tone(950, 0.045, "square", 0.05);
+    },
     ok:    () => { tone(660, 0.09, "triangle", 0.11); tone(990, 0.13, "triangle", 0.11, 0.09); },
     beep:  () => tone(440, 0.12, "sine", 0.14),
     go:    () => tone(880, 0.3, "sine", 0.16),
@@ -768,6 +776,27 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.21.0", items: [
+    "⚡ Schneller auf dem Handy: Filmkorn-Ebene 16× kleiner, Pegelanzeigen und Spielerliste zeichnen nur noch neu, wenn sich wirklich etwas ändert",
+    "📶 Weniger Datenverbrauch: Profilbilder (11 MB) laden erst beim Hinscrollen, Lobby-Musik (3 MB) erst beim ersten Abspielen, das Verbindungsmodul bremst den Seitenaufbau nicht mehr",
+    "🔊 Speicherleck behoben: Unterwasser-, Roboter- und Doppelgänger-Effekt ließen bei jeder Wiedergabe Hintergrund-Oszillatoren weiterlaufen",
+    "🎬 Outtakes werden erst nach der Premiere im Hintergrund geschnitten — vorher bremste das das Laden der Premiere",
+    "🚪 Raum verlassen mitten in der Premiere lässt den Kinosaal nicht mehr abgedunkelt stehen; keine Premiere-, Bewertungs- oder Duell-Reste im nächsten Raum",
+    "🛡 Namen, Profilbilder, Sterne und Duell-Stimmen von Mitspielern werden geprüft — kein eingeschleuster Code, keine Fantasie-Bewertungen",
+    "🔌 Wiederverbinden robuster: alte Verbindungen können eine neue nicht mehr abreißen",
+    "🎤 Test-Aufnahme verträgt Doppelklicks und Fehler; Take anhören und Szene ansehen hängen nicht mehr bei blockierter Wiedergabe",
+    "📱 Szenen-Vorschau funktioniert auch auf älteren iPhones; doppelte Klick-Geräusche entfernt; fehlende englische Texte ergänzt"
+  ], itemsEn: [
+    "⚡ Faster on phones: film grain layer 16× smaller, level meters and player list only redraw when something actually changes",
+    "📶 Less data: profile pictures (11 MB) load only when scrolled into view, lobby music (3 MB) only on first play, the connection module no longer delays page load",
+    "🔊 Memory leak fixed: underwater, robot and doppelgänger effects left background oscillators running after every playback",
+    "🎬 Outtakes are cut in the background only after the premiere — before, this slowed down premiere loading",
+    "🚪 Leaving during the premiere no longer leaves the cinema darkened; no premiere, rating or duel leftovers in the next room",
+    "🛡 Names, profile pictures, stars and duel votes from other players are validated — no injected code, no fake ratings",
+    "🔌 More robust reconnecting: old connections can no longer tear down a new one",
+    "🎤 Test recording handles double clicks and errors; listening to a take and watching the scene no longer hang when playback is blocked",
+    "📱 Scene preview works on older iPhones; duplicate click sounds removed; missing English texts added"
+  ]},
   { v: "9.20.0", items: [
     "★ Favoriten und die letzten 20 gespielten Szenen bleiben auf diesem Gerät gespeichert",
     "👥 Gruppenfilter zeigt Szenen mit genau einer Rolle pro anwesender Person",
@@ -2030,13 +2059,25 @@ const ACCESSORIES = {
 let myAccessory = null;
 try { const a2 = localStorage.getItem("ss_accessory"); if (a2) myAccessory = JSON.parse(a2); } catch {}
 
+// Profilbild/Accessoire kommen von Mitspielern übers Netz. Nur Werte aus unseren
+// eigenen Listen annehmen — sonst könnte jemand HTML/Skript in die Spielerliste schmuggeln.
+function cleanAvatar(av) {
+  if (!av || typeof av !== "object") return null;
+  if (av.type === "emoji" && AVATAR_EMOJIS.includes(av.value)) return { type: "emoji", value: av.value };
+  if (av.type === "char" && AVATAR_CHARS.some(c => c.img === av.value)) return { type: "char", value: av.value };
+  return null;
+}
+function cleanAccessory(a) {
+  return typeof a === "string" && Object.prototype.hasOwnProperty.call(ACCESSORIES, a) ? a : null;
+}
 function avatarHTML(p) {
-  const av = p.avatar;
-  const acc = p.accessory && ACCESSORIES[p.accessory] ? ACCESSORIES[p.accessory].svg : "";
+  const av = cleanAvatar(p.avatar);
+  const accKey = cleanAccessory(p.accessory);
+  const acc = accKey ? ACCESSORIES[accKey].svg : "";
   const wrap = (inner) => acc ? `<div style="position:relative;display:inline-block">${inner}${acc}</div>` : inner;
-  if (av && av.type === "char") return wrap(`<div class="pavatar pavatar-img" style="background-image:url('${av.value}')"></div>`);
-  if (av && av.type === "emoji") return wrap(`<div class="pavatar" style="background:${avatarColor(p.name)}">${av.value}</div>`);
-  const initial = (p.name || "?").trim().charAt(0).toUpperCase() || "?";
+  if (av && av.type === "char") return wrap(`<div class="pavatar pavatar-img" style="background-image:url('${esc(av.value)}')"></div>`);
+  if (av && av.type === "emoji") return wrap(`<div class="pavatar" style="background:${avatarColor(p.name)}">${esc(av.value)}</div>`);
+  const initial = String(p.name || "?").trim().charAt(0).toUpperCase() || "?";
   return wrap(`<div class="pavatar" style="background:${avatarColor(p.name)}">${esc(initial)}</div>`);
 }
 
@@ -2044,9 +2085,12 @@ function renderAvatarPicker() {
   const grid = $("avatar-grid");
   if (!grid) return;
   const emojiHtml = AVATAR_EMOJIS.map(e => `<button class="avatarbtn" data-type="emoji" data-value="${e}">${e}</button>`).join("");
-  const charHtml = AVATAR_CHARS.map(c => `<button class="avatarbtn avatarbtn-img" data-type="char" data-value="${c.img}" style="background-image:url(\'${c.img}\')" title="${esc(c.label)}"></button>`).join("");
+  // Bilder erst laden, wenn sie in Sichtweite kommen: das sind 339 Dateien (~11 MB).
+  // Vorher wurden alle auf einmal geholt — auf dem Handy eine Minute Datenverbrauch.
+  const charHtml = AVATAR_CHARS.map(c => `<button class="avatarbtn avatarbtn-img" data-type="char" data-value="${esc(c.img)}" data-bg="${esc(c.img)}" title="${esc(c.label)}"></button>`).join("");
   grid.innerHTML = `<div class="avatar-section-label">${tt("Emoji", "Emoji")}</div><div class="avatar-row">${emojiHtml}</div>
     <div class="avatar-section-label">${tt("From our scenes", "Aus unseren Szenen")}</div><div class="avatar-row">${charHtml}</div>`;
+  lazyBackgrounds(grid);
   grid.querySelectorAll(".avatarbtn").forEach(b => b.onclick = () => {
     myAvatar = { type: b.dataset.type, value: b.dataset.value };
     try { localStorage.setItem("ss_avatar", JSON.stringify(myAvatar)); } catch {}
@@ -2062,6 +2106,22 @@ function renderAvatarPicker() {
   renderAccessoryPicker();
 }
 
+let avatarBgObserver = null;
+function lazyBackgrounds(container) {
+  const els = container.querySelectorAll("[data-bg]");
+  const load = (el) => {
+    const url = el.getAttribute("data-bg");
+    if (!url) return;
+    el.style.backgroundImage = "url('" + url.replace(/['"\\()]/g, "") + "')";
+    el.removeAttribute("data-bg");
+  };
+  if (!("IntersectionObserver" in window)) { els.forEach(load); return; }
+  if (avatarBgObserver) avatarBgObserver.disconnect();
+  avatarBgObserver = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { load(e.target); avatarBgObserver.unobserve(e.target); } });
+  }, { rootMargin: "300px 0px" });
+  els.forEach(el => avatarBgObserver.observe(el));
+}
 // ── Accessoire-Auswahl: Katzenohren, Kopfhörer & Co. — überlagern das gewählte Profilbild ──
 function renderAccessoryPicker() {
   const wrap = $("accessory-grid");
@@ -2189,7 +2249,12 @@ let vuBuilt = false, vuPeak = 0, vuPeakT = 0;
 function updateVuMeter(rms) {
   const wrap = $("vu-leds");
   if (!wrap) return;
-  if (!vuBuilt) { wrap.innerHTML = "<i></i>".repeat(VU_SEGMENTS); vuBuilt = true; }
+  if (!vuBuilt) {
+    wrap.innerHTML = "<i></i>".repeat(VU_SEGMENTS);
+    // Treppe nach oben, wie am echten Gerät — nur einmal setzen, nicht 60× pro Sekunde
+    for (let i = 0; i < VU_SEGMENTS; i++) if (wrap.children[i]) wrap.children[i].style.height = (42 + (i / VU_SEGMENTS) * 58) + "%";
+    vuBuilt = true;
+  }
   // RMS ist typischerweise sehr klein — auf eine Skala ziehen, bei der normales Sprechen
   // im mittleren Bereich landet und nur echtes Anschreien ganz oben rot wird
   const level = Math.min(1, Math.pow(Math.max(0, rms) * 3.6, 0.72));
@@ -2202,13 +2267,18 @@ function updateVuMeter(rms) {
     const el = kids[i];
     if (!el) continue;
     const isLit = i < lit, isPeak = i === vuPeak - 1 && vuPeak > lit;
-    el.className = (isLit || isPeak) ? (i >= VU_SEGMENTS - 2 ? "on-hi" : i >= VU_SEGMENTS - 5 ? "on-mid" : "on-lo") : "";
-    el.style.opacity = isPeak && !isLit ? ".55" : "1";
-    el.style.height = (42 + (i / VU_SEGMENTS) * 58) + "%";   // Treppe nach oben, wie am echten Gerät
+    const cls = (isLit || isPeak) ? (i >= VU_SEGMENTS - 2 ? "on-hi" : i >= VU_SEGMENTS - 5 ? "on-mid" : "on-lo") : "";
+    const op = isPeak && !isLit ? ".55" : "1";
+    // Nur schreiben, wenn sich etwas ändert — spart Style-Neuberechnung in jedem Bild
+    if (el.className !== cls) el.className = cls;
+    if (el.__op !== op) { el.style.opacity = op; el.__op = op; }
   }
 }
 
 let gateRAF = null;
+function setBgIfChanged(el, bg) {
+  if (el && el.__bg !== bg) { el.style.background = bg; el.__bg = bg; }
+}
 function stopGateLoop() {
   if (gateRAF) { cancelAnimationFrame(gateRAF); gateRAF = null; }
 }
@@ -2227,23 +2297,20 @@ function startGateLoop() {
     const now = performance.now();
 
     // Lobby-Mikro-Live-Anzeige: unabhängig vom Gate, zeigt einfach "kommt gerade Ton an"
-    const liveDot = $("mic-live-dot");
-    if (liveDot) liveDot.style.background = rms > 0.02 ? "var(--ok)" : "#3a3a46";
+    setBgIfChanged($("mic-live-dot"), rms > 0.02 ? "var(--ok)" : "#3a3a46");
     updateVuMeter(rms);
 
     const thr = micSettings.gate * 0.16;            // Slider 0..1 → Schwelle 0..0.16 RMS (deutlich stärker)
     if (thr <= 0) {
       if (!gateOpen) { micGateNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01); gateOpen = true; }
-      const lamp0 = $("gate-lamp"), lamp02 = $("booth-gate-lamp");
-      if (lamp0) lamp0.style.background = "var(--ok)";
-      if (lamp02) lamp02.style.background = "var(--ok)";
+      setBgIfChanged($("gate-lamp"), "var(--ok)");
+      setBgIfChanged($("booth-gate-lamp"), "var(--ok)");
     } else {
       if (rms > thr) lastLoudT = now;
       if (rms > thr && !gateOpen) { micGateNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.004); gateOpen = true; }
       else if (gateOpen && now - lastLoudT > 200) { micGateNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05); gateOpen = false; }
-      const lamp = $("gate-lamp"), lamp2 = $("booth-gate-lamp");
-      if (lamp) lamp.style.background = gateOpen ? "var(--ok)" : "#3a3a46";
-      if (lamp2) lamp2.style.background = gateOpen ? "var(--ok)" : "#3a3a46";
+      setBgIfChanged($("gate-lamp"), gateOpen ? "var(--ok)" : "#3a3a46");
+      setBgIfChanged($("booth-gate-lamp"), gateOpen ? "var(--ok)" : "#3a3a46");
     }
     gateRAF = requestAnimationFrame(loop);
   }
@@ -2522,7 +2589,7 @@ function lineSpeakSeconds(l) {
 }
 function showLineDuration(l) {
   const el = $("line-dur");
-  if (el) el.textContent = "~" + Math.max(1, Math.round(lineSpeakSeconds(l))) + " Sek.";
+  if (el) el.textContent = "~" + Math.max(1, Math.round(lineSpeakSeconds(l))) + tt(" sec.", " Sek.");
 }
 
 // ── Studio-Spektrum: logarithmisch verteilte Bänder als LED-Ketten ──
@@ -2558,7 +2625,10 @@ function startVizOn(canvasId) {
     vizRAF = requestAnimationFrame(draw);
     const dt = Math.min(0.1, ((now || performance.now()) - last) / 1000);
     last = now || performance.now();
-    const W = canvas.clientWidth * dpr, H = canvas.clientHeight * dpr;
+    // Runden: bei krummen Pixeldichten (z. B. 2,625 auf Android) war W nie gleich
+    // canvas.width — die Leinwand wurde dadurch JEDES Bild neu angelegt.
+    const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
+    if (!W || !H) return;
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     g.clearRect(0, 0, W, H);
 
@@ -2638,21 +2708,49 @@ async function initMicScreen() {
   $("btn-mic-done").disabled = false;
   status("mic-status", tt("Speak into the mic — bars should move. Then do a test record!", "Sprich rein — die Bars sollen ausschlagen. Dann Test aufnehmen!"));
 }
+// Test-Aufnahme (3 s) — gemeinsam für Mikro-Setup und Lobby. Sperre gegen Doppelklick:
+// vorher liefen dann zwei Recorder gleichzeitig und die Wiedergabe überlagerte sich.
+let micTestBusy = false;
+async function runMicTest(statusId, playback) {
+  if (micTestBusy) return;
+  if (typeof MediaRecorder === "undefined") {
+    status(statusId, tt("🎤 This browser can’t record audio. Please update it or use Chrome, Edge, Firefox or Safari 14.1+.", "🎤 Dieser Browser kann keinen Ton aufnehmen. Bitte aktualisieren oder Chrome, Edge, Firefox bzw. Safari ab 14.1 nutzen."), true);
+    SFX.err();
+    return;
+  }
+  micTestBusy = true;
+  try {
+    status(statusId, tt("🎤 Speak for 3 seconds …", "🎤 Sprich jetzt 3 Sekunden …"));
+    const rec = voiceRecorder();
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { rec.onstop = res; });
+    rec.start(); SFX.rec();
+    await new Promise(r => setTimeout(r, 3000));
+    try { if (rec.state !== "inactive") rec.stop(); } catch {}
+    SFX.stop();
+    await stopped;
+    if (!chunks.length) throw new Error("empty");
+    const ctx = getCtx();
+    const buf = await ctx.decodeAudioData(await new Blob(chunks, { type: chunks[0].type || "" }).arrayBuffer());
+    // Sicherheitsnetz, falls das Ende-Signal ausbleibt (z. B. Ton pausiert) — Knopf nie dauerhaft sperren
+    await Promise.race([playback(ctx, buf), new Promise(r => setTimeout(r, (buf.duration || 3) * 2000 + 2000))]);
+  } catch (e) {
+    console.warn("Mikro-Test:", e);
+    status(statusId, tt("⚠ Test recording didn’t work — check the microphone and try again.", "⚠ Test-Aufnahme hat nicht geklappt — Mikro prüfen und nochmal versuchen."), true);
+    SFX.err();
+  } finally {
+    micTestBusy = false;
+  }
+}
 $("btn-mic-record").onclick = async () => {
   if (!micStream) { await initMicScreen(); if (!micStream) return; }
-  status("mic-status", tt("🎤 Speak for 3 seconds …", "🎤 Sprich jetzt 3 Sekunden …"));
-  const rec = voiceRecorder();
-  const chunks = [];
-  rec.ondataavailable = e => chunks.push(e.data);
-  rec.onstop = async () => {
+  await runMicTest("mic-status", (ctx, buf) => new Promise(res => {
     status("mic-status", tt("This is how you sound in the take:", "So klingst du in der Aufnahme:"));
-    const ctx = getCtx();
-    const buf = await ctx.decodeAudioData(await new Blob(chunks).arrayBuffer());
-    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start();
-    src.onended = () => { status("mic-status", tt("Good? Continue — or tweak the sliders and test again.", "Passt? Dann weiter — sonst Regler anpassen und nochmal testen.")); $("btn-mic-done").disabled = false; };
-  };
-  rec.start(); SFX.rec();
-  setTimeout(() => { rec.stop(); SFX.stop(); }, 3000);
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+    src.onended = () => { status("mic-status", tt("Good? Continue — or tweak the sliders and test again.", "Passt? Dann weiter — sonst Regler anpassen und nochmal testen.")); $("btn-mic-done").disabled = false; res(); };
+    src.start();
+  }));
 };
 $("btn-mic-done").onclick = () => {
   cancelAnimationFrame(vizRAF);
@@ -2726,7 +2824,7 @@ function wireHostPeerLifecycle() {
   peer.on("connection", (conn) => setupHostConn(conn));
   peer.on("disconnected", () => {
     if (absichtlichWeg || hostHandoffActive || !peer || peer.destroyed) return;
-    wvBanner("📴 Leitung zum Vermittlungsserver weg — melde neu an …");
+    wvBanner(tt("📴 Lost the line to the game server — re-registering …", "📴 Leitung zum Vermittlungsserver weg — melde neu an …"));
     try { peer.reconnect(); } catch {}
     setTimeout(() => { if (peer && !peer.disconnected) wvBannerAus(); }, 2500);
   });
@@ -2845,27 +2943,54 @@ function startHostPeer(attempt, reopenOnly) {
   });
 }
 
+// PeerJS wird mit "defer" geladen, damit es den ersten Bildaufbau nicht bremst.
+// Wer sehr schnell klickt, wartet hier kurz, statt einen Fehler zu bekommen.
+let peerLibWait = null;
+function withPeerLib(run, tries = 0) {
+  if (typeof Peer === "function") { peerLibWait = null; run(); return; }
+  if (tries === 0) {
+    clearTimeout(peerLibWait);
+    status("start-status", tt("⏳ Loading connection module …", "⏳ Lade Verbindungsmodul …"));
+  }
+  if (tries >= 80) {
+    peerLibWait = null;
+    status("start-status", tt("❌ The connection module couldn’t load. Check your internet / ad blocker and reload the page.", "❌ Das Verbindungsmodul konnte nicht laden. Internet / Werbeblocker prüfen und Seite neu laden."), true);
+    SFX.err();
+    return;
+  }
+  peerLibWait = setTimeout(() => withPeerLib(run, tries + 1), 250);
+}
+// Namen begrenzen: extrem lange Namen sprengen sonst Spielerliste und Podium
+const NAME_MAX = 24;
+function cleanName(raw) {
+  return String(raw || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, NAME_MAX).trim();
+}
+
 $("btn-create").onclick = () => {
-  myName = $("in-name").value.trim();
+  myName = cleanName($("in-name").value);
   if (!myName) return status("start-status", tt("Enter a name first 😄", "Erst Namen eingeben, digga 😄"), true), SFX.err();
   saveName();
-  isHost = true;
-  logicalHostKey = myKey;
-  absichtlichWeg = false;
-  hostHandoffActive = false;
-  raumCode = randCode();
-  startHostPeer(0, false);
+  withPeerLib(() => {
+    isHost = true;
+    logicalHostKey = myKey;
+    absichtlichWeg = false;
+    hostHandoffActive = false;
+    raumCode = randCode();
+    startHostPeer(0, false);
+  });
 };
 
 $("btn-join").onclick = () => {
-  myName = $("in-name").value.trim();
+  myName = cleanName($("in-name").value);
   const code = $("in-code").value.trim();
   if (!myName) return status("start-status", tt("Enter a name first 🙂", "Erst Namen eingeben 🙂"), true), SFX.err();
   if (!isRoomCode(code)) return status("start-status", tt("The room code has 5 digits.", "Der Raumcode hat 5 Ziffern."), true), SFX.err();
   saveName();
-  absichtlichWeg = false; wvVersuch = 0; warSchonDrin = false; hostHandoffActive = false;
-  logicalHostKey = null;
-  gastBeitreten(code, false, 0);
+  withPeerLib(() => {
+    absichtlichWeg = false; wvVersuch = 0; warSchonDrin = false; hostHandoffActive = false;
+    logicalHostKey = null;
+    gastBeitreten(code, false, 0);
+  });
 };
 let warSchonDrin = false;   // erst nach einem geglückten Beitritt automatisch nachfassen
 let hostHandoffActive = false; // Host-Wechsel läuft — kein Doppel-Reconnect / kein Raum-zu
@@ -2948,7 +3073,8 @@ function gastBeitreten(code, wiederkehr, attempt, preferBroker) {
     // Alten „Broker öffnen“-Timer weg — sonst kann er später stören
     clearJoinFailTimers();
     melde(tt("② Game server OK (", "② Spiel-Server OK (") + broker.label + tt(") — looking for room ", ") — suche Raum ") + code + " …");
-    hostConn = peer.connect(PEER_PREFIX + code, { reliable: true });
+    const myConn = hostConn = peer.connect(PEER_PREFIX + code, { reliable: true });
+    const aktuell = () => myConn === hostConn;   // alte, ersetzte Verbindungen ignorieren
 
     // Schritt 2: Host finden / verbinden — kein endloses „suche Raum“ ohne Meldung
     joinFailTimers.push(setTimeout(() => {
@@ -2982,7 +3108,8 @@ function gastBeitreten(code, wiederkehr, attempt, preferBroker) {
       });
     }, ROOM_SEARCH_MS));
 
-    hostConn.on("open", () => {
+    myConn.on("open", () => {
+      if (!aktuell()) { try { myConn.close(); } catch {} return; }
       joined = true;
       finished = true;
       clearJoinFailTimers();
@@ -3025,10 +3152,11 @@ function gastBeitreten(code, wiederkehr, attempt, preferBroker) {
         clearInterval(iceWatchTimer); iceWatchTimer = null;
       }
     }, 2000);
-    hostConn.on("data", (msg) => handleMsg(msg, hostConn));
-    hostConn.on("close", verbindungWeg);
-    hostConn.on("error", (e) => {
+    myConn.on("data", (msg) => { if (aktuell()) handleMsg(msg, myConn); });
+    myConn.on("close", () => { if (aktuell()) verbindungWeg(); });
+    myConn.on("error", (e) => {
       console.error("conn error", e);
+      if (!aktuell()) return;
       if (!joined) failJoin(tt("Connection error to the host: ", "Verbindungsfehler zum Host: ") + (e.type || e));
       else verbindungWeg();
     });
@@ -3117,7 +3245,9 @@ function wvBannerAus() { const el = $("wv-banner"); if (el) el.style.display = "
 // Lobby music — always via assetUrl (Pages/CDN) + resume AudioContext (otherwise silent)
 const lobbyAudio = new Audio();
 lobbyAudio.loop = true;
-lobbyAudio.preload = "auto";
+// Nicht vorab laden: die Datei hat 3 MB und wird erst mit dem ersten Klick gebraucht
+// (vorher blockiert der Browser das Abspielen ohnehin). Spart Handy-Daten beim Öffnen.
+lobbyAudio.preload = "none";
 function ensureLobbySrc() {
   const url = assetUrl("scenes/lobby_music.mp3");
   if (lobbyAudio.getAttribute("data-ss-src") !== url) {
@@ -3173,9 +3303,9 @@ function drawLobbyViz() {
   (function loop() {
     if (!lobbyVizWanted()) { stopLobbyViz(); return; }
     lobbyVizRAF = requestAnimationFrame(loop);
-    const W = canvas.clientWidth * dpr, H = canvas.clientHeight * dpr;
+    const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
     if (!W || !H) return;
-    if (canvas.width !== W) { canvas.width = W; canvas.height = H; }
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     g.clearRect(0, 0, W, H);
     if (lobbyAudio.paused) return;
     lobbyAn.getByteFrequencyData(lobbyVizData);
@@ -3273,6 +3403,9 @@ document.addEventListener("ss-langchange", () => {
       renderRedoPanel("redo-panel-prem");
     }
     if (typeof renderPremState === "function") renderPremState();
+    if (typeof syncOuttakesBeepToggles === "function") syncOuttakesBeepToggles();
+    if (typeof updatePremPauseBtn === "function") updatePremPauseBtn();
+    if (isHost && typeof renderPremPlayerVolPanel === "function" && mixItems.length) renderPremPlayerVolPanel();
     if (typeof updateOuttakesBtn === "function") updateOuttakesBtn();
     if (typeof updateDownloadBtnLabel === "function") updateDownloadBtnLabel();
     const pv = $("play-video");
@@ -3356,7 +3489,9 @@ document.addEventListener("ss-langchange", () => {
     if (leave) leave.textContent = tt("🚪 Leave room", "🚪 Raum verlassen");
     const cancel = $("btn-leave-cancel");
     if (cancel) cancel.textContent = tt("Cancel", "Abbrechen");
-    try { if (typeof renderAvatarPicker === "function") renderAvatarPicker(); } catch {}
+    // Nur neu aufbauen, wenn die Auswahl schon einmal offen war (sonst lädt ein
+    // Sprachwechsel unnötig die ganze Bildersammlung)
+    try { if (typeof renderAvatarPicker === "function" && $("avatar-grid")?.childElementCount) renderAvatarPicker(); } catch {}
     renderPlayers();
     try { if (typeof renderBoothPlayers === "function") renderBoothPlayers(); } catch {}
     try { if (typeof checkStartable === "function") checkStartable(); } catch {}
@@ -3884,9 +4019,57 @@ function leaveRoom(statusMsg) {
   $("host-start").style.display = "none";
   $("scene-card").style.display = "none";
   $("leave-btn").style.display = "none";
+  resetRoomLeftovers();
   status("start-status", statusMsg || tt("Left the room. You can create or join a new one right away.", "Raum verlassen. Du kannst direkt einen neuen erstellen oder beitreten."));
   show("scr-start");
   SFX.stop();
+}
+// Alles beenden, was nach dem Verlassen noch laufen oder sichtbar sein könnte. Vorher blieb
+// z. B. nach dem Gehen mitten in der Premiere der abgedunkelte Kinosaal stehen, und
+// Premiere-/Bewertungs-/Duell-Reste wanderten in den nächsten Raum mit.
+function resetRoomLeftovers() {
+  const safe = fn => { try { fn(); } catch (e) { console.warn("Aufräumen:", e); } };
+  safe(() => { cancelAnimationFrame(vizRAF); vizRAF = null; });
+  safe(() => { if (pendingMediaTap) pendingMediaTap.cancel(); });
+  safe(() => {
+    stopRecCue();
+    if (origSrc) { try { origSrc.stop(); } catch {} origSrc = null; }
+    if (previewSrc) { try { previewSrc.stop(); } catch {} previewSrc = null; }
+    stopFxPreview();
+    if (sceneStopHandler) { $("booth-video").removeEventListener("timeupdate", sceneStopHandler); sceneStopHandler = null; }
+  });
+  safe(() => {
+    outtakeAbort = true; premWatched = false;
+    clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null;
+    silenceOuttakesTransBus();
+    resolveOuttakesCachePending(null);
+    outtakesCache = null; outtakesSaveWhenReady = false;
+    const ov = $("outtakes-overlay"); if (ov) ov.classList.remove("show");
+    const ov2 = $("outtakes-video"); if (ov2) { ov2.pause(); ov2.removeAttribute("src"); ov2.load(); }
+  });
+  safe(() => invalidatePremCache());
+  safe(() => {
+    premiereLocked = false; premPaused = false; finalTracksData = null; redoMode = null;
+    pendingRate = false; rateSent = false; ratingDone = false; allRatings.clear(); myStars = {}; myBuddy = null;
+    duelInfo = null; duelStagedScene = null;
+    Object.keys(duelSubs).forEach(k => delete duelSubs[k]);
+    Object.keys(duelVotes).forEach(k => delete duelVotes[k]);
+    clearTimeout(forceMixTimer); clearTimeout(offlineNachpruefTimer); clearTimeout(rateForceTimer);
+  });
+  safe(() => {
+    packMode = false; packRefFp = null; releasePack();
+    Object.keys(packPeers).forEach(k => delete packPeers[k]);
+  });
+  safe(() => resetPremPlayerGains());
+  safe(() => exitCinemaMode());
+  safe(() => { const c = $("cinema-curtains"); if (c) c.classList.remove("show", "open"); });
+  safe(() => {
+    $("rate-card").style.display = "none"; $("rate-rows").innerHTML = ""; $("rate-result").innerHTML = "";
+    $("btn-next-round").style.display = "none";
+    $("countdown").classList.remove("show");
+    const pop = $("prem-orig-panel"); if (pop) pop.style.display = "none";
+  });
+  safe(() => updateOuttakesBtn());
 }
 let pendingConfirm = null; // { type:"leave" } | { type:"kick", pid } | { type:"hostgive", pid }
 document.body.insertAdjacentHTML("beforeend",
@@ -4078,6 +4261,10 @@ function setupHostConn(conn) {
   conn.on("open", track);
   conn.on("data", (msg) => handleMsg(msg, conn));
   conn.on("close", () => {
+    // Hat dieselbe Peer-ID schon eine neue Verbindung? Dann nur die alte vergessen —
+    // deren eigenes "close" kümmert sich, falls auch die neue scheitert.
+    const current = conns.get(conn.peer);
+    if (current && current !== conn) return;
     conns.delete(conn.peer);
     const gone = players.find(p => p.id === conn.peer);
     if (!gone) { broadcastState(); return; }
@@ -4643,10 +4830,15 @@ function handleMsg(msg, conn) {
       };
       const samePeer = players.find(p => p.id === conn.peer);
       if (samePeer) {
+        // Gleiche Peer-ID kommt nach einem Abbruch zurück → wieder als online zählen
+        if (samePeer.offline) {
+          samePeer.offline = false; delete samePeer.offlineBis; delete samePeer.offlineSeit;
+          if (samePeer.key) { clearTimeout(rueckkehrTimer.get(samePeer.key)); rueckkehrTimer.delete(samePeer.key); }
+        }
         samePeer.micState = ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown";
-        if (msg.name) samePeer.name = stripHostTag(msg.name);
-        if (msg.avatar) samePeer.avatar = msg.avatar;
-        if (msg.accessory) samePeer.accessory = msg.accessory;
+        if (msg.name) samePeer.name = cleanName(stripHostTag(msg.name)) || samePeer.name;
+        if (msg.avatar) samePeer.avatar = cleanAvatar(msg.avatar);
+        if (msg.accessory) samePeer.accessory = cleanAccessory(msg.accessory);
         if (msg.key && !samePeer.key) samePeer.key = msg.key;
         applyLogicalHostLabels();
         pushRoster();
@@ -4661,9 +4853,9 @@ function handleMsg(msg, conn) {
         clearTimeout(rueckkehrTimer.get(msg.key)); rueckkehrTimer.delete(msg.key);
         rueck.id = conn.peer;
         rueck.offline = false; delete rueck.offlineBis; delete rueck.offlineSeit;
-        if (msg.name) rueck.name = stripHostTag(msg.name);
-        if (msg.avatar) rueck.avatar = msg.avatar;
-        if (msg.accessory) rueck.accessory = msg.accessory;
+        if (msg.name) rueck.name = cleanName(stripHostTag(msg.name)) || rueck.name;
+        if (msg.avatar) rueck.avatar = cleanAvatar(msg.avatar);
+        if (msg.accessory) rueck.accessory = cleanAccessory(msg.accessory);
         applyLogicalHostLabels();
         idUmschreiben(alteId, conn.peer);
         players = players.filter(p => p === rueck || !p.key || p.key !== msg.key);
@@ -4697,7 +4889,7 @@ function handleMsg(msg, conn) {
         break;
       }
       if (players.length >= 8) { conn.send({ t: "full", cap: 8 }); setTimeout(() => conn.close(), 500); break; }
-      players.push({ micState: ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown", id: conn.peer, key: msg.key || null, name: stripHostTag(msg.name), avatar: msg.avatar || null, accessory: msg.accessory || null, role: null, ready: false, done: 0, total: 0, loadPct: 0, videoReady: false });
+      players.push({ micState: ["ready","blocked","error","pending"].includes(msg.micState)?msg.micState:"unknown", id: conn.peer, key: typeof msg.key === "string" ? msg.key.slice(0, 80) : null, name: cleanName(stripHostTag(msg.name)) || "?", avatar: cleanAvatar(msg.avatar), accessory: cleanAccessory(msg.accessory), role: null, ready: false, done: 0, total: 0, loadPct: 0, videoReady: false });
       applyLogicalHostLabels();
       if (scene) { if (localVideoBuf) sendLocalVideo(conn); else conn.send({ t: "scene", scene }); }
       conn.send({ t: "drawState", drawBoard, drawEpoch });
@@ -4803,7 +4995,12 @@ function handleMsg(msg, conn) {
       if (msg.k === "rxScore") mgScore("rx", conn.peer, msg.ms);
       if (msg.k === "tpScore") mgScore("tp", conn.peer, msg.ms);
       break;
-    case "emoji": emojiBroadcast(conn.peer, msg.char); break;
+    case "emoji": {
+      // Nur kurze Zeichen weiterreichen (Emoji-Knöpfe) — kein Text-Spam an alle
+      const ch = typeof msg.char === "string" ? msg.char : "";
+      if (ch && ch.length <= 8) emojiBroadcast(conn.peer, ch);
+      break;
+    }
     case "premReady": {
       const p = players.find(p => p.id === conn.peer);
       if (p) p.prem = true;
@@ -5202,8 +5399,12 @@ function renderLibraryFilters() {
 let libraryPreviewScene=null;
 function closeLibraryPreview() {
   const dialog=$('scene-preview-dialog'),v=$('scene-preview-video');
-  v.pause();v.removeAttribute('src');v.load();libraryPreviewScene=null;
-  if(dialog.open)dialog.close();
+  if(!dialog||!v)return;
+  try{v.pause();v.removeAttribute('src');v.load();}catch{}
+  libraryPreviewScene=null;
+  // Ältere Browser (z. B. iOS < 15.4) kennen <dialog> nicht — dort über das open-Attribut
+  if(typeof dialog.close==='function'){if(dialog.open)dialog.close();}
+  else dialog.removeAttribute('open');
 }
 function previewLabels() {
   $('scene-preview-close').textContent=tt('Close','Schließen');
@@ -5215,9 +5416,10 @@ function previewLabels() {
 function openLibraryPreview(s) {
   if(!s?.previewUrl)return;
   closeLibraryPreview();libraryPreviewScene=s;previewLabels();
-  const v=$('scene-preview-video');
+  const v=$('scene-preview-video'),dialog=$('scene-preview-dialog');
   v.src=s.previewUrl;
-  $('scene-preview-dialog').showModal();
+  try{ if(typeof dialog.showModal==='function')dialog.showModal(); else dialog.setAttribute('open',''); }
+  catch{ dialog.setAttribute('open',''); }
   v.play().catch(()=>{}); // Native controls permit a second tap when autoplay is blocked.
 }
 $('scene-preview-close').onclick=closeLibraryPreview;
@@ -5347,7 +5549,12 @@ function renderSceneGrid(filter) {
     };
   });
 }
-$("scene-search") && ($("scene-search").oninput = () => renderSceneGrid());
+// Beim Tippen nicht bei jedem Buchstaben alle ~120 Kacheln neu bauen
+let sceneSearchTimer = null;
+$("scene-search") && ($("scene-search").oninput = () => {
+  clearTimeout(sceneSearchTimer);
+  sceneSearchTimer = setTimeout(() => renderSceneGrid(), 120);
+});
 
 // Spielmodus: große Taster statt kleinem Dropdown — wählt intern weiter das <select>
 function syncModePicker(mode) {
@@ -6083,6 +6290,7 @@ function showScene(src) {
 // 4) LOBBY-UI
 // ═════════════════════════════════════════════════════════════
 function avatarColor(name) {
+  name = String(name || "");
   let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return `hsl(${Math.abs(h) % 360}, 70%, 55%)`;
 }
@@ -6131,9 +6339,18 @@ function escOfflineCountdown(p) {
     ? tt(" · hopefully back soon (", " · kommt hoffentlich zurück (") + Math.floor(restSek / 60) + ":" + String(restSek % 60).padStart(2, "0") + ")"
     : "");
 }
+// Nur neu zeichnen, wenn sich wirklich etwas geändert hat. Die Liste wird bei jedem
+// Ladeprozent angestoßen; ein kompletter Neuaufbau (inkl. Profilbilder) ließ vor allem
+// schwächere Handys ruckeln und setzte laufende CSS-Animationen jedes Mal neu in Gang.
+function setHtmlIfChanged(el, html) {
+  if (!el || el.__ssHtml === html) return false;
+  el.innerHTML = html;
+  el.__ssHtml = html;
+  return true;
+}
 function renderPlayers() {
   const me=players.find(p=>p.id===myId);if(me)me.micState=currentMicState();
-  $("player-list").innerHTML = players.map(playerCard).join("");
+  setHtmlIfChanged($("player-list"), players.map(playerCard).join(""));
   const n=groupSize();if(n!==libraryGroupCount){libraryGroupCount=n;renderSceneGrid();}
 }
 // Offline-Restzeit: nur Text-Tags ticken, kein kompletter Listen-Rebuild
@@ -6149,8 +6366,8 @@ setInterval(() => {
 }, 1000);
 function renderBoothPlayers() {
   const html = players.map(playerCard).join("");
-  $("booth-players").innerHTML = html;
-  $("wait-players").innerHTML = html;
+  setHtmlIfChanged($("booth-players"), html);
+  setHtmlIfChanged($("wait-players"), html);
 }
 
 function renderRoles() {
@@ -6436,26 +6653,17 @@ function voiceRecorder() {
 
 $("btn-mic-test").onclick = async () => {
   if (!(await ensureMic())) return;
-  status("lobby-status", tt("🎤 Speak for 3 seconds …", "🎤 Sprich jetzt 3 Sekunden …"));
-  const rec = voiceRecorder();
-  const chunks = [];
-  rec.ondataavailable = e => chunks.push(e.data);
-  rec.onstop = async () => {
+  await runMicTest("lobby-status", (ctx, audio) => new Promise(res => {
     status("lobby-status", tt("Playing with your role effect …", "Abspielen mit deinem Rollen-Effekt …"));
-    const buf = await new Blob(chunks).arrayBuffer();
-    const ctx = getCtx();
-    const audio = await ctx.decodeAudioData(buf);
     const me = players.find(p => p.id === myId);
     const role = scene?.roles.find(r => r.id === me?.role) || { pan: 0, effect: "none", gain: 1 };
     const src = ctx.createBufferSource();
     src.buffer = audio;
     src.playbackRate.value = effectPitch(role.effect);
-    src.connect(buildChain(ctx, role, ctx.destination));
+    connectChain(src, ctx, role, ctx.destination);
+    src.onended = () => { status("lobby-status", tt("This is how you sound in the take. Good? Then “I'm ready”.", "So klingst du im Take. Passt? Dann „Bin bereit“.")); res(); };
     src.start();
-    src.onended = () => status("lobby-status", tt("This is how you sound in the take. Good? Then “I'm ready”.", "So klingst du im Take. Passt? Dann „Bin bereit“."));
-  };
-  rec.start();
-  setTimeout(() => rec.stop(), 3000);
+  }));
 };
 
 // ═════════════════════════════════════════════════════════════
@@ -7465,7 +7673,7 @@ $("btn-line-orig").onclick = async () => {
     src.connect(ctx.destination);
     src.start();
     origSrc = src;
-    $("btn-line-orig").textContent = "⏹ Stopp";
+    $("btn-line-orig").textContent = tt("⏹ Stop", "⏹ Stopp");
     src.onended = () => { if (origSrc === src) { origSrc = null; $("btn-line-orig").textContent = t("booth.orig"); v.pause(); } };
   } catch (e) {
     if (myReqId !== origReqId) return;
@@ -7491,7 +7699,7 @@ $("btn-line-scene").onclick = () => {
   if (!v.paused) { v.pause(); $("btn-line-scene").textContent = t("booth.scene"); return; }   // 2. Klick = Stopp
   v.currentTime = Math.max(0, l.t - 0.5);
   v.volume = boothVol; v.playbackRate = practiceSpeed;
-  v.play();
+  playMedia(v).catch(() => { $("btn-line-scene").textContent = t("booth.scene"); });
   $("btn-line-scene").textContent = tt("⏹ Stop", "⏹ Stopp");
   sceneStopHandler = () => {
     if (v.currentTime >= l.end + 0.3) {
@@ -7840,24 +8048,30 @@ async function onLineRecorded() {
 let previewSrc = null;
 $("btn-line-play").onclick = async () => {
   const l = myLines[curLine];
-  if (!takes[l.idx] || takes[l.idx] === "SKIP") return;
+  if (!l || !takes[l.idx] || takes[l.idx] === "SKIP") return;
   if (previewSrc) { try { previewSrc.stop(); } catch {} previewSrc = null; }
-  const ctx = getCtx();
-  const rawBuf = await ctx.decodeAudioData(await toArrayBuffer(takes[l.idx]));
-  const _r = myEffectiveRole(myLines[curLine] || {});
-  const buf = processTakeBuffer(ctx, rawBuf, micSettings.gate, _r.effect, _r.fxAmount);   // Gate + ggf. Studio-Aufbereitung
-  // Videobild läuft synchron mit (leise), kein Standbild mehr
-  const v = $("booth-video");
-  v.pause(); v.currentTime = l.t; v.volume = boothVol * 0.6; v.playbackRate = 1;
-  await v.play();
-  const effRole = myEffectiveRole(myLines[curLine]);
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.playbackRate.value = effectPitch(effRole.effect);
-  src.connect(buildChain(ctx, effRole, ctx.destination));
-  src.start();
-  previewSrc = src;
-  src.onended = () => { if (previewSrc === src) previewSrc = null; v.pause(); };
+  try {
+    const ctx = getCtx();
+    const rawBuf = await ctx.decodeAudioData(await toArrayBuffer(takes[l.idx]));
+    if (myLines[curLine] !== l) return;   // inzwischen andere Line
+    const effRole = myEffectiveRole(l);
+    const buf = processTakeBuffer(ctx, rawBuf, micSettings.gate, effRole.effect, effRole.fxAmount);   // Gate + ggf. Studio-Aufbereitung
+    // Videobild läuft synchron mit (leise), kein Standbild mehr
+    const v = $("booth-video");
+    v.pause(); v.currentTime = l.t; v.volume = boothVol * 0.6; v.playbackRate = 1;
+    await v.play().catch(() => {});   // Bild ist nur Beiwerk — der Take soll trotzdem hörbar sein
+    if (myLines[curLine] !== l) return;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = effectPitch(effRole.effect);
+    connectChain(src, ctx, effRole, ctx.destination);
+    src.start();
+    previewSrc = src;
+    src.onended = () => { if (previewSrc === src) previewSrc = null; v.pause(); };
+  } catch (e) {
+    console.warn("Take anhören:", e);
+    status("booth-status", tt("⚠ This take couldn’t be played — record it again.", "⚠ Dieser Take ließ sich nicht abspielen — bitte neu aufnehmen."), true);
+  }
 };
 
 function bufferPeak(buf) {
@@ -8020,7 +8234,7 @@ function startFxPreview() {
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = effectPitch(role.effect);
-  src.connect(buildChain(ctx, role, ctx.destination));
+  connectChain(src, ctx, role, ctx.destination);
   src.start();
   fxPreviewSrc = src;
   if (btn) btn.textContent = tt("⏹ Stop", "⏹ Stopp");
@@ -8724,6 +8938,7 @@ const allRatings = new Map();   // Host: voterId → { scores, buddy }
 const BUDDY_BONUS = 1.0;        // Extra-Punkte pro erhaltenem SynchroBuddy
 
 function showRateCard() {
+  setTimeout(markPremWatched, 1500);
   exitCinemaMode();
   const c = $("cinema-curtains"); if (c) c.classList.remove("show", "open");
   const speakers = players.filter(p => p.role != null && !p.offline && p.id !== myId);
@@ -8813,6 +9028,16 @@ function sendRating(scores, buddy) {
 }
 function collectRating(voterId, scores, buddy) {
   if (!match.buddyGivers) match.buddyGivers = {};
+  // Nur 1–5 Sterne für echte Mitspieler (nicht für sich selbst) zählen
+  const clean = {};
+  if (scores && typeof scores === "object") {
+    for (const [pid, n] of Object.entries(scores)) {
+      if (pid === voterId || !players.some(p => p.id === pid)) continue;
+      if (Number.isInteger(n) && n >= 1 && n <= 5) clean[pid] = n;
+    }
+  }
+  scores = clean;
+  if (buddy != null && (typeof buddy !== "string" || buddy === voterId || !players.some(p => p.id === buddy))) buddy = null;
   // SynchroBuddy nur einmal pro Match und Wähler
   let okBuddy = buddy || null;
   if (okBuddy && match.buddyGivers[voterId]) okBuddy = null;
@@ -9075,7 +9300,7 @@ function showFinal(list, rounds, championName) {
         setTimeout(() => burstConfetti(gap >= 1 ? true : false), 1400);
         if (stage) stage.classList.add("alive");
         if (champEl && top3[0]) {
-          const gapTxt = top3[1] ? (label === "dominant" ? " · klare Sache!" : label === "knapp" ? " · knapper Sieg!" : "") : "";
+          const gapTxt = top3[1] ? (label === "dominant" ? tt(" · no contest!", " · klare Sache!") : label === "knapp" ? tt(" · close win!", " · knapper Sieg!") : "") : "";
           champEl.textContent = "👑 " + top3[0].name.toUpperCase() + " — CHAMPION" + gapTxt;
           champEl.classList.add("show");
         }
@@ -9120,7 +9345,8 @@ function backToLobby(keepMatch) {
   if (!keepMatch) { match.round = 1; match.totals = {}; match.buddyGivers = {}; myBuddyUsed = false; }
   players.forEach(p => { p.ready = false; p.done = 0; p.total = 0; p.prem = false; p.premPct = 0; });
   mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; outtakesCache = null;
-  finalTracksData = null; premiereLocked = false; redoMode = null;
+  finalTracksData = null; premiereLocked = false; redoMode = null; premWatched = false;
+  clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null;
   resetPremPlayerGains();
   pendingRate = false; rateSent = false; ratingDone = false; allRatings.clear(); myStars = {}; myBuddy = null;
   $("rate-card").style.display = "none"; $("rate-rows").innerHTML = ""; $("rate-result").innerHTML = "";
@@ -9157,7 +9383,7 @@ function showRateResult(results, eliminatedName) {
       </div>
       <span class="resultscore">${scoreLabel}</span>
     </div>`;
-  }).join("") + (eliminatedName ? `<div class="raterow" style="border-color:var(--hot);opacity:0">🔪 <b>${esc(eliminatedName)}</b> ist raus aus dem Battle Royale!</div>` : "");
+  }).join("") + (eliminatedName ? `<div class="raterow" style="border-color:var(--hot);opacity:0">🔪 <b>${esc(eliminatedName)}</b> ${tt("is out of the Battle Royale!", "ist raus aus dem Battle Royale!")}</div>` : "");
   [...rows.children].forEach((row, i) => {
     setTimeout(() => { row.style.transition = "opacity .4s, transform .4s"; row.style.opacity = "1"; row.style.transform = "translateX(0)"; }, i * 150);
   });
@@ -9246,7 +9472,7 @@ function syncOuttakesBeepToggles() {
   if (a) a.checked = outtakesBeepOn;
   if (b) b.checked = outtakesBeepOn;
   document.querySelectorAll(".ot-beep-lab").forEach(el => {
-    el.textContent = outtakesBeepOn ? "Rauschen an" : "Rauschen aus";
+    el.textContent = outtakesBeepOn ? tt("Static on", "Rauschen an") : tt("Static off", "Rauschen aus");
   });
 }
 function setOuttakesBeepOn(on) {
@@ -9488,9 +9714,17 @@ function resolveOuttakesCachePending(val) {
   }
 }
 
+// Stiller Outtakes-Schnitt erst NACH der Premiere: vorher lief er schon, während alle
+// die Premiere luden, und nahm genau dann Rechenleistung weg (Ruckeln/lange Ladezeit).
+let premWatched = false;
+function markPremWatched() {
+  if (premWatched) return;
+  premWatched = true;
+  scheduleOuttakesPrecache();
+}
 function scheduleOuttakesPrecache() {
   clearTimeout(outtakesPrecacheTimer);
-  if (!outtakes.length || outtakesCacheReady()) return;
+  if (!outtakes.length || outtakesCacheReady() || !premWatched) return;
   outtakesPrecacheTimer = setTimeout(() => {
     if (!outtakes.length || outtakesCacheReady() || outtakesPlaying || outtakesCachePending) return;
     // Nie parallel zur Premiere — sonst malt outtakesDrawTrans Rauschen in den Original-Mix
@@ -10164,7 +10398,8 @@ async function applyTrackUpdate(role, lineIdx, startAt, rawBuf, effect, gate, bo
 
 // ── Duell: beide Einreichungen sammeln, dann zwei komplette Mixe bauen ──
 function collectDuelSubmit(playerId, items) {
-  duelSubs[playerId] = items;
+  if (!isHost || !duelInfo || (playerId !== duelInfo.aId && playerId !== duelInfo.bId)) return;
+  duelSubs[playerId] = Array.isArray(items) ? items : [];
   if (duelSubs[duelInfo.aId] && duelSubs[duelInfo.bId]) assembleDuelMixes();
 }
 function assembleDuelMixes() {
@@ -10324,6 +10559,7 @@ function castDuelVote(choice) {
   else sendHost({ t: "duelVote", choice });
 }
 function collectDuelVote(voterId, choice) {
+  if (!duelInfo || (choice !== "a" && choice !== "b") || !duelVoterIds().includes(voterId)) return;
   duelVotes[voterId] = choice;
   maybeFinishDuelVote();
 }
@@ -11038,13 +11274,13 @@ function setPremPlayerGain(role, gain) {
   if (row) {
     const pct = Math.round(g * 100);
     const pctEl = row.querySelector(".ppv-pct");
-    if (pctEl) { pctEl.textContent = pct + "%"; pctEl.title = "Aktuell " + pct + "% (max. 300 %)"; }
+    if (pctEl) { pctEl.textContent = pct + "%"; pctEl.title = tt("Currently ", "Aktuell ") + pct + "% (max. 300 %)"; }
     const minus = row.querySelector('.ppv-btn[data-delta="-"]');
     const plus = row.querySelector('.ppv-btn[data-delta="+"]');
     if (minus) minus.disabled = g <= 0.05;
     if (plus) {
       plus.disabled = g >= 3;
-      plus.title = g >= 3 ? "Schon maximal (300 %)" : "Lauter (bis 300 %)";
+      plus.title = g >= 3 ? tt("Already at maximum (300%)", "Schon maximal (300 %)") : tt("Louder (up to 300%)", "Lauter (bis 300 %)");
     }
   } else {
     renderPremPlayerVolPanel();
@@ -11246,18 +11482,18 @@ function renderPremPlayerVolPanel() {
     minus.className = "ppv-btn";
     minus.dataset.delta = "-";
     minus.textContent = "−";
-    minus.title = "Leiser";
+    minus.title = tt("Quieter", "Leiser");
     minus.disabled = g <= 0.05;
     const pctEl = document.createElement("span");
     pctEl.className = "ppv-pct";
     pctEl.textContent = pct + "%";
-    pctEl.title = "Aktuell " + pct + "% (max. 300 %)";
+    pctEl.title = tt("Currently ", "Aktuell ") + pct + "% (max. 300 %)";
     const plus = document.createElement("button");
     plus.type = "button";
     plus.className = "ppv-btn";
     plus.dataset.delta = "+";
     plus.textContent = "+";
-    plus.title = g >= 3 ? "Schon maximal (300 %)" : "Lauter (bis 300 %)";
+    plus.title = g >= 3 ? tt("Already at maximum (300%)", "Schon maximal (300 %)") : tt("Louder (up to 300%)", "Lauter (bis 300 %)");
     plus.disabled = g >= 3;
     row.appendChild(name);
     row.appendChild(minus);
@@ -11278,7 +11514,7 @@ function updatePremPauseBtn() {
     return;
   }
   btn.style.display = "";
-  btn.textContent = premPaused ? "▶ Weiter für alle" : "⏸ Pause für alle";
+  btn.textContent = premPaused ? tt("▶ Resume for everyone", "▶ Weiter für alle") : tt("⏸ Pause for everyone", "⏸ Pause für alle");
 }
 
 function premPauseAll(fromHostClick, syncT) {
@@ -11542,7 +11778,7 @@ async function exportAudioFast() {
       src.buffer = item.buffer;
       const rate = effectPitch(role.effect);
       src.playbackRate.value = rate;
-      src.connect(buildChain(offlineCtx, role, master));
+      connectChain(src, offlineCtx, role, master);
       let maxDur = item.buffer.duration;
       if (scene.lines && item.lineIdx != null) {
         const l = scene.lines[item.lineIdx];
@@ -12056,8 +12292,8 @@ async function playMixInternal(opts) {
     }
     if (saveFile) {
       status("play-status", quiet
-        ? "🎬 Schneide im Hintergrund — musst nicht zuschauen, Fenster bitte offen lassen …"
-        : "🔴 Nimmt Video auf — Fenster bitte im Vordergrund lassen, sonst wird das Bild schwarz!");
+        ? tt("🎬 Cutting in the background — no need to watch, but keep the window open …", "🎬 Schneide im Hintergrund — musst nicht zuschauen, Fenster bitte offen lassen …")
+        : tt("🔴 Recording video — keep the window in front, otherwise the picture turns black!", "🔴 Nimmt Video auf — Fenster bitte im Vordergrund lassen, sonst wird das Bild schwarz!"));
       $("dl-progress").style.display = "";
     }
   }
@@ -12100,7 +12336,7 @@ async function playMixInternal(opts) {
     const dest = (rk != null)
       ? ensurePremPlayerGainNode(ctx, rk, master)
       : master;
-    src.connect(buildChain(ctx, role, dest));
+    connectChain(src, ctx, role, dest);
     // Spur auf ihr Line-Fenster begrenzen → kein Reinlabern in die nächste Line
     const _rate = src.playbackRate.value || 1;
     let maxDur = item.buffer.duration;
@@ -12127,6 +12363,7 @@ async function playMixInternal(opts) {
     premPaused = false;
     updatePremPauseBtn();
     if (pendingRate && !saveFile) { pendingRate = false; showRateCard(); }
+    if (!saveFile) setTimeout(markPremWatched, 1500);   // Premiere-Mitschnitt zuerst fertig werden lassen
   }, { once: true });
 
   if (fileRec) v.addEventListener("ended", () => { if (fileRec.state !== "inactive") fileRec.stop(); }, { once: true });
@@ -12175,8 +12412,24 @@ $("sync-offset").oninput = (e) => {
 };
 
 // ── Effekt-Ketten ────────────────────────────────────────────
+// Quelle + Effektkette verbinden. Manche Effekte (Unterwasser, Roboter, Doppelgänger)
+// brauchen einen Oszillator (LFO), der dauerhaft läuft. Früher wurde der nie gestoppt:
+// jede Wiedergabe/Vorschau ließ neue Oszillatoren weiterlaufen — der Ton-Graph wuchs
+// und kostete immer mehr Rechenzeit. Jetzt enden sie zusammen mit ihrer Quelle.
+function connectChain(src, ctx, role, dest) {
+  const chain = buildChain(ctx, role, dest);
+  src.connect(chain);
+  const lfos = chain._ssLfos;
+  if (lfos && lfos.length) {
+    const stopLfos = () => lfos.forEach(o => { try { o.stop(); } catch {} try { o.disconnect(); } catch {} });
+    try { src.addEventListener("ended", stopLfos, { once: true }); } catch {}
+  }
+  return chain;
+}
 function buildChain(ctx, role, dest) {
   const input = ctx.createGain();
+  const lfos = [];
+  input._ssLfos = lfos;
   input.gain.value = role.gain ?? 1;
   const pan = ctx.createStereoPanner();
   pan.pan.value = role.pan ?? 0;
@@ -12228,7 +12481,7 @@ function buildChain(ctx, role, dest) {
       const uwLfo = ctx.createOscillator(); uwLfo.type = "sine"; uwLfo.frequency.value = 3.1;
       const uwDepth = ctx.createGain(); uwDepth.gain.value = 230;
       uwLfo.connect(uwDepth); uwDepth.connect(lp.frequency);
-      try { uwLfo.start(); } catch {}
+      try { uwLfo.start(); lfos.push(uwLfo); } catch {}
       break;
     }
     case "helium":
@@ -12247,7 +12500,7 @@ function buildChain(ctx, role, dest) {
       const merge = ctx.createGain();
       ringGain.connect(merge); dcOffset.connect(merge);
       node = merge;
-      try { lfo.start(); } catch {}
+      try { lfo.start(); lfos.push(lfo); } catch {}
       filt("bandpass", 1800, 0.7);
       break;
     }
@@ -12259,7 +12512,7 @@ function buildChain(ctx, role, dest) {
       const chLfo = ctx.createOscillator(); chLfo.type = "sine"; chLfo.frequency.value = 0.9;
       const chDepth = ctx.createGain(); chDepth.gain.value = 0.006;
       chLfo.connect(chDepth); chDepth.connect(delay.delayTime);
-      try { chLfo.start(); } catch {}
+      try { chLfo.start(); lfos.push(chLfo); } catch {}
       node.connect(dry); node.connect(delay); delay.connect(wet);
       const merge2 = ctx.createGain();
       dry.connect(merge2); wet.connect(merge2);
@@ -12513,7 +12766,7 @@ function resetForNewRound() {
     p.loadPct = 0; p.videoReady = false;
   });
   mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; outtakesCache = null;
-  clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null;
+  clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null; premWatched = false;
   outtakeAbort = true; outtakesPlaying = false; outtakesQuietJob = false;
   outtakesSaveWhenReady = false; outtakesDidSaveBlob = false;
   silenceOuttakesTransBus();
@@ -12524,6 +12777,11 @@ function resetForNewRound() {
   clearSceneCaches();
   pendingPhaseRestore = null;
   finalTracksData = null; premiereLocked = false; redoMode = null;
+  // Booth-Anzeige und Vorhören nicht im Hintergrund weiterlaufen lassen
+  try { cancelAnimationFrame(vizRAF); vizRAF = null; } catch {}
+  try { if (origSrc) { origSrc.stop(); origSrc = null; } } catch {}
+  try { if (previewSrc) { previewSrc.stop(); previewSrc = null; } } catch {}
+  try { stopFxPreview(); } catch {}
   try { if (audioCtx && audioCtx.state === "suspended") audioCtx.resume(); } catch {}
   const pop = $("prem-orig-panel"); if (pop) pop.style.display = "none";
   updatePremPauseBtn();
