@@ -43,6 +43,10 @@ Seit v7.1 komplett umgestylt: **"echtes Studio-Equipment"**-Ästhetik statt gene
 
 - Mikro-Setup mit Rauschunterdrückung/Echo/AGC/Noise-Gate, Live-Pegelmeter
 - Spielmodi: Freies Spiel, Runden-Modus, Battle-Royale-Elimination, Duell-Modus (2 Personen sprechen dieselbe Rolle, Gruppe stimmt ab — Host muss aktiv "abspielen" klicken, kein Auto-Play)
+- Team-Battle (ab v9.24): Team A gegen Team B synchronisieren dieselbe Szene; beide Teams sprechen dieselben Rollen (max. 2 pro Person im kleineren Team, Rest bleibt original), danach laufen beide Versionen nacheinander und jeder vergibt dem ANDEREN Team 1–5 Sterne. Team steckt in `players[].team` ("a"/"b"), Neue landen automatisch im kleineren Team. Nutzt die Duell-Wiedergabe (`loadDuelSequence` mit `info.kind === "team"`) und den Duell-Abstimm-Screen
+- Szene des Tages: aus dem Datum per Hash bestimmt (kein Server), für alle gleich, nie zweimal hintereinander dieselbe; Startseite + Banner in der Szenen-Auswahl + ⭐-Markierung auf der Kachel
+- Erfolge: 22 Stück, lokal in `localStorage["ss_achievements"]` (Freischalt-Zeitpunkte + Zähler). Liste über „🏅 Erfolge“ auf Startseite/Lobby
+- Kurze Anleitung (5 Schritte) beim ersten Besuch, groß „Überspringen“, wieder aufrufbar über „❓ So geht's“ (`localStorage["ss_tutorial_done"]`)
 - Blind-Modus (keine Übersetzung/Original, nur improvisieren)
 - Rollen-Effekte: Telefon, Funkgerät, Hall, Unterwasser, Monster, Titan, Roboter, Helium, Vintage, Chorus, Echo, Megafon — alle synthetisiert, keine Audiodateien
 - Aufnahme mit Noise-Gate, Live-Wellenform (Original lila + eigene Stimme blau überlagert)
@@ -80,6 +84,8 @@ Elias schickt ein RAR/ZIP im "Mod-Pack"-Format (Choicer-Voicer-Style): Video + `
 - Copyright: Übersetzungen/Zitate aus Filmen sind okay (privates Spiel, funktionale Nutzung als Spieltext)
 
 ## Testen
+
+Mehrspieler-Tests (echte Browserfenster, echte WebRTC-Verbindungen, lokaler PeerJS-Server): siehe `tools/multiplayer-test/README.md`. Damit wurden in v9.24 alle Modi durchgespielt (Frei, Match, Battle Royale, Duell, Team-Battle, lokale Packs, eigenes Video, Host weitergeben, Verbindungsabbruch, Nachzügler, Kicken, TicTacToe).
 
 Bei Code-Änderungen (nicht bei reinen Szenen-Uploads): echte Funktionstests mit jsdom + Mocks (AudioContext, Peer, MediaRecorder) — keine bloße Syntaxprüfung. Achtung: Helper-Funktionen für Tests via `window.eval()` müssen INNERHALB des String-Blocks liegen, der zusammen mit `client.js` evaluiert wird — nicht danach in der äußeren Node-Umgebung, sonst falscher Scope.
 

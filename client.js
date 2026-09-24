@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.23.1";
+const APP_VERSION = "9.24.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -242,6 +242,7 @@ let sceneVideoController = null;
 let mixLoadToken = 0;
 let sceneChoiceToken = 0;
 let pendingDuelGo = false;
+let pendingHostDuelGo = false;   // Besitzer: Start-Befehl kam, bevor beide Versionen fertig waren
 let sceneAudioController = new AbortController();
 let myLoadPct = 0;
 let myVideoReady = false;
@@ -284,7 +285,9 @@ function clearSceneCaches() {
   mixLoadToken++;
   sceneChoiceToken++;
   pendingDuelGo = false;
+  pendingHostDuelGo = false;
   window.__duelRunSequence = null;
+  window.__duelHostGo = null;
   sceneAudioController.abort();
   stopSceneRecordings();
   sceneAudioController = new AbortController();
@@ -776,6 +779,27 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.24.0", items: [
+    "⚔ Neuer Modus Team-Battle: Team A gegen Team B synchronisieren dieselbe Szene, danach laufen beide Versionen und jeder bewertet das andere Team mit Sternen (Teams automatisch oder per Antippen einteilen)",
+    "⭐ Szene des Tages: jeden Tag automatisch eine andere Szene — für alle gleich, auf der Startseite und oben in der Szenen-Auswahl",
+    "🏅 Erfolge: 22 Erfolge zum Freischalten (erste Aufnahme, Bester Sprecher, Duell-Sieger, Nachteule …) — auf dem Gerät gespeichert",
+    "❓ Kurze Anleitung beim ersten Besuch — mit gut sichtbarem „Überspringen“, später über „So geht’s“ wieder aufrufbar",
+    "👑 Host weitergeben: der neue Host kann jetzt auch „Nächste Runde“, den Duell-Start und „Zurück zur Lobby“ bedienen (ging vorher nur beim Raum-Ersteller)",
+    "🔊 Premiere: Lautstärke pro Spieler und Auto-Ausgleich kamen bei den anderen nie an — behoben",
+    "❌ TicTacToe: nach einem Sieg von X ging das Spiel weiter und zählte weitere Siege — behoben",
+    "🥊 Duell/Team: Gäste flogen manchmal aus der Aufnahme-Kabine, wenn das Video beim Host langsamer lud — behoben",
+    "📦 Lokale Packs mit .ogv-Video: klarer Hinweis, dass Chrome/Safari davon nur den Ton abspielen"
+  ], itemsEn: [
+    "⚔ New mode Team battle: Team A and Team B dub the same scene, then both versions play and everyone rates the other team with stars (teams split automatically or by tapping)",
+    "⭐ Scene of the day: a different scene every day, automatically — the same for everyone, on the start page and at the top of the scene picker",
+    "🏅 Achievements: 22 achievements to unlock (first take, best voice actor, duel winner, night owl …) — saved on your device",
+    "❓ Short tutorial on the first visit — with a clearly visible “Skip”, reopen it any time via “How to play”",
+    "👑 Passing host: the new host can now also use “Next round”, start the duel playback and “Back to lobby” (previously only the room creator could)",
+    "🔊 Premiere: per-player volume and auto-balance never reached the other players — fixed",
+    "❌ Tic-tac-toe: after X won, the game went on and counted more wins — fixed",
+    "🥊 Duel/Team: guests were sometimes thrown out of the recording booth when the host's video loaded more slowly — fixed",
+    "📦 Local packs with .ogv video: clear note that Chrome/Safari only play their sound"
+  ]},
   { v: "9.23.1", items: [
     "🎵 Lobby-Musik war auf der Live-Seite stumm (der Browser blockierte den Ton vom CDN) — behoben"
   ], itemsEn: [
@@ -3432,6 +3456,7 @@ document.addEventListener("visibilitychange", () => {
 
 // Language switch: refresh live booth / premiere UI strings
 document.addEventListener("ss-langchange", () => {
+  try { renderAchButtons(); renderDaily(); if ($("ach-overlay") && $("ach-overlay").style.display !== "none") renderAchList(); } catch {}
   try {
     if ($("scr-booth")?.classList.contains("active") && typeof renderLine === "function") renderLine();
     if (typeof renderRedoPanel === "function") {
@@ -4050,6 +4075,8 @@ function leaveRoom(statusMsg) {
   Object.keys(mgWins).forEach(k => delete mgWins[k]);
   $("host-settings").style.display = "none";
   match.mode = "free";
+  resetTeamRound();
+  if ($("team-setup")) $("team-setup").style.display = "none";
   $("onair").classList.remove("live");
   $("host-scene").style.display = "none";
   $("host-start").style.display = "none";
@@ -4311,6 +4338,7 @@ function setupHostConn(conn) {
     const twin = players.find(p => p !== gone && p.key === gone.key);
     if (twin) {
       if (twin.role == null && gone.role != null) twin.role = gone.role;
+      if (!twin.team && gone.team) twin.team = gone.team;
       if ((!twin.extraRoles || !twin.extraRoles.length) && gone.extraRoles && gone.extraRoles.length) twin.extraRoles = gone.extraRoles.slice();
       if ((twin.done || 0) < (gone.done || 0)) { twin.done = gone.done; twin.total = gone.total; }
       if (!twin.ready && gone.ready) twin.ready = true;
@@ -4339,6 +4367,8 @@ function setupHostConn(conn) {
     broadcastState();
     // Notausgang-Knopf für den Host neu bewerten, falls gerade auf diese Spur gewartet wird
     maybeFinishTracks();
+    maybeFinishTeam();
+    if (teamInfo && document.querySelector("#scr-duel-vote.active")) maybeFinishTeamVote();
     syncForceMixBtn();
     maybeFinishRating();
   });
@@ -4359,6 +4389,8 @@ function endgueltigWeg(p) {
   else broadcastState();
   maybeFinishTracks();
   if (duelInfo && document.querySelector("#scr-duel-vote.active")) maybeFinishDuelVote();
+  maybeFinishTeam();
+  if (teamInfo && document.querySelector("#scr-duel-vote.active")) maybeFinishTeamVote();
   updateRateProgress();
   maybeFinishRating();
   syncForceMixBtn();
@@ -4397,8 +4429,10 @@ function syncHostUi() {
   const hostUi = iAmLogicalHost();
   const rnd = match.mode === "rounds" || match.mode === "elimination";
   const duell = match.mode === "duell";
+  const team = match.mode === "team";
   if ($("host-settings")) $("host-settings").style.display = (hostUi && inLobby) ? "" : "none";
-  if ($("host-scene")) $("host-scene").style.display = (hostUi && inLobby && !rnd && !duell) ? "" : "none";
+  if ($("host-scene")) $("host-scene").style.display = (hostUi && inLobby && !rnd && !duell && !team) ? "" : "none";
+  if ($("team-setup")) $("team-setup").style.display = team ? "" : "none";
   if ($("host-start")) $("host-start").style.display = (hostUi && inLobby) ? "" : "none";
   if ($("duel-setup")) $("duel-setup").style.display = (hostUi && inLobby && duell) ? "" : "none";
   if ($("rounds-opts")) $("rounds-opts").style.display = (hostUi && inLobby && match.mode === "rounds") ? "" : "none";
@@ -4414,8 +4448,10 @@ function syncHostUi() {
     $("set-rounds").onchange = hostSettingsChanged;
     $("set-roulette").onchange = hostSettingsChanged;
     if (duell) populateDuelSceneSelect();
-    if (!rnd && !duell) loadSceneList();
+    if (team) loadSceneList().then(populateTeamSceneSelect).catch(() => {});
+    if (!rnd && !duell && !team) loadSceneList();
   }
+  if (team) renderTeamSetup();
   renderSettingsView();
   renderPlayers();
   if (hostUi) checkStartable();
@@ -4502,10 +4538,14 @@ async function handleHostCmd(msg, sender) {
       syncModePicker(match.mode);
       const rnd = match.mode === "rounds" || match.mode === "elimination";
       const duell = match.mode === "duell";
+      const team = match.mode === "team";
       if ($("rounds-opts")) $("rounds-opts").style.display = (match.mode === "rounds") ? "" : "none";
-      if ($("host-scene")) $("host-scene").style.display = (rnd || duell) ? "none" : "";
+      if ($("host-scene")) $("host-scene").style.display = (rnd || duell || team) ? "none" : "";
       if ($("duel-setup")) $("duel-setup").style.display = duell ? "" : "none";
+      if ($("team-setup")) $("team-setup").style.display = team ? "" : "none";
+      if (team) { ensureTeams(); populateTeamSceneSelect(); renderTeamSetup(); }
       if (match.mode !== prevMode) {
+        resetTeamRound();
         scene = null; clearSceneVideoState();
         scenePool = []; duelInfo = null; duelStagedScene = null;
         packMode = false; packRefFp = null; releasePack(); Object.keys(packPeers).forEach(k => delete packPeers[k]);
@@ -4578,7 +4618,30 @@ async function handleHostCmd(msg, sender) {
       break;
     }
     case "forceMix":
-      maybeFinishTracks(true);
+      if (match.mode === "team" && teamInfo) maybeFinishTeam(true);
+      else maybeFinishTracks(true);
+      break;
+    case "teamSet":
+      setPlayerTeam(msg.pid, msg.team);
+      break;
+    case "teamShuffle":
+      shuffleTeams();
+      break;
+    case "teamStart":
+      startTeamBattle(typeof msg.sceneId === "string" ? msg.sceneId : null);
+      break;
+    case "teamVoteForce":
+      finishTeamVote();
+      break;
+    case "duelPlayGo":
+      if (window.__duelHostGo) window.__duelHostGo();
+      else pendingHostDuelGo = true;
+      break;
+    case "duelBack":
+      duelBackToLobby();
+      break;
+    case "nextRound":
+      advanceMatch();
       break;
     case "again":
       broadcast({ t: "again" });
@@ -4665,6 +4728,8 @@ function idUmschreiben(alt, neu) {
 
   ausMap(allRatings); ausMap(cbScores); ausMap(rxScores); ausMap(tpScores);
   ausObj(duelVotes); ausObj(duelSubs); ausObj(mgWins);
+  ausObj(teamSubs); ausObj(teamVotes);
+  if (teamInfo) { teamInfo.a = ausListe(teamInfo.a); teamInfo.b = ausListe(teamInfo.b); ausObj(teamInfo.names); }
   if (match && match.totals) ausObj(match.totals);
   if (match && match.buddyGivers) ausObj(match.buddyGivers);
   if (duelInfo) { if (duelInfo.aId === alt) duelInfo.aId = neu; if (duelInfo.bId === alt) duelInfo.bId = neu; }
@@ -4682,7 +4747,7 @@ function aktuellePhase() {
 function broadcast(msg) {
   conns.forEach(c => {
     if (!c.open) return;
-    try { c.send(msg); } catch (error) { console.warn("Broadcast failed for one peer:", error); }
+    try { c.send(msg); } catch (error) { console.warn("Broadcast failed for one peer:", msg && msg.t, error); }
   });
 }
 let stateBroadcastTimer = null;
@@ -4691,7 +4756,11 @@ function flushStateBroadcast() {
   stateBroadcastTimer = null;
   // Phase mitschicken: Gaeste koennen sich damit selbst korrigieren, wenn eine
   // einzelne Steuer-Nachricht (z.B. "again") unterwegs verloren gegangen ist.
-  const _phase = (document.querySelector(".screen.active") || {}).id || null;
+  // Wartet der Host nur noch auf sein Video (Duell/Team starten ohne Bereit-Check), gilt er schon
+  // als „in der Kabine“. Sonst hielten Gäste, die schneller geladen haben, die Lobby-Phase für
+  // einen verlorenen „again“ und flogen mitten in der Aufnahme aus der Kabine.
+  const _phase = pendingGoLines ? "scr-booth" : ((document.querySelector(".screen.active") || {}).id || null);
+  if (match.mode === "team" && _phase === "scr-lobby" && ensureTeams()) { renderPlayers(); }
   broadcast({ t: "state", players, logicalHostKey, premiereLocked: !!premiereLocked, premPaused: !!premPaused, hostPhase: _phase });
   checkStartable();
   checkAllDone();
@@ -4715,7 +4784,7 @@ function broadcastState(opts) {
 const HOST_IN = new Set([
   "hello", "bye", "micState", "pickRole", "ready", "progress", "loadProg", "tracks", "trackUpdate",
   "ttt", "rps", "dice", "draw", "rate", "mg", "emoji", "premReady", "premProg", "cb",
-  "duelSubmit", "duelVote", "hostCmd", "packInfo"
+  "duelSubmit", "duelVote", "hostCmd", "packInfo", "teamSubmit", "teamVote"
 ]);
 // Nachrichten, die Gäste vom Host annehmen dürfen
 const GUEST_IN = new Set([
@@ -4726,7 +4795,8 @@ const GUEST_IN = new Set([
   "goLines", "go", "mix", "outtakesPool", "playOuttakes", "tttState", "rpsState", "diceState",
   "drawState", "premGo", "premReplay", "premOrig", "premPlayerVol", "premAutoBal", "premPause", "premResume", "emojiShow", "rateResult",
   "rxGo", "tpGo", "mgResult", "cbGo", "cbResult", "again",
-  "packState", "packScene", "packMode"
+  "packState", "packScene", "packMode",
+  "teamInfo", "teamReady", "teamVoteLive", "teamResult"
 ]);
 
 let pendingPhaseRestore = null;
@@ -5052,6 +5122,8 @@ function handleMsg(msg, conn) {
     case "packInfo": collectPackInfo(conn.peer, msg); break;
     case "duelSubmit": collectDuelSubmit(conn.peer, attachTrackMeta(msg.items, msg)); break;
     case "duelVote": collectDuelVote(conn.peer, msg.choice); break;
+    case "teamSubmit": collectTeamSubmit(conn.peer, attachMetaToTracks(msg.tracks, msg)); break;
+    case "teamVote": collectTeamVote(conn.peer, msg.stars); break;
 
     // — Gast ← Host —
     case "full":
@@ -5135,6 +5207,8 @@ function handleMsg(msg, conn) {
     case "settings":
       match.mode = msg.mode; match.rounds = msg.rounds; match.round = msg.round; match.autoRoulette = msg.autoRoulette;
       renderSettingsView(msg);
+      if ($("team-setup")) $("team-setup").style.display = match.mode === "team" ? "" : "none";
+      if (match.mode === "team") renderTeamSetup();
       if (iAmLogicalHost()) syncHostUi();
       break;
     case "sceneReset": {
@@ -5160,6 +5234,14 @@ function handleMsg(msg, conn) {
       break;
     case "packScene": adoptPackScene(msg); break;
     case "duelSetupInfo": duelInfo = msg.duelInfo; break;
+    case "teamInfo": resetTeamRound(); teamInfo = msg.teamInfo; break;
+    case "teamReady":
+      attachMetaToTracks(msg.dataA, msg.metaA || {});
+      attachMetaToTracks(msg.dataB, msg.metaB || {});
+      loadDuelSequence(msg.dataA, msg.dataB, msg.info);
+      break;
+    case "teamVoteLive": showTeamVoteLive(msg.live || { done: 0, total: 0 }); break;
+    case "teamResult": if (msg.result) showTeamResult(msg.result); break;
     case "duelReady":
       attachMetaToTracks(msg.dataA, msg.metaA || msg);
       attachMetaToTracks(msg.dataB, msg.metaB || msg);
@@ -5482,6 +5564,8 @@ function playerReadiness(p){
   else if(mic==='pending')messages.push(tt('Waiting for microphone permission','Wartet auf Mikrofonfreigabe'));
   else if(mic!=='ready'&&!p.ready)messages.push(tt('Microphone not checked yet','Mikrofon noch nicht geprüft'));
   if(messages.length)return messages.join(' · ');
+  // Duell/Team-Battle: Rollen verteilt der Host beim Start — „Rolle auswählen“ wäre hier falsch
+  if((match.mode==='team'||match.mode==='duell')&&document.querySelector('#scr-lobby.active'))return tt('Waiting for the host to start','Wartet auf den Start durch den Host');
   if(p.ready)return tt('Ready','Bereit');
   if(!rolesOfPlayer(p).length)return tt('Choose a role','Rolle auswählen');
   return tt('Video and microphone ready — confirm ready','Video und Mikrofon bereit — Bereitschaft bestätigen');
@@ -5516,8 +5600,330 @@ function renderRoleFilter() {
   });
 }
 
+
+// ═════════════════════════════════════════════════════════════
+// ERFOLGE — pro Gerät im Browser gespeichert (kein Konto nötig).
+// Freischalten zeigt einen Toast; die Liste gibt's über „🏅 Erfolge“.
+// ═════════════════════════════════════════════════════════════
+const ACHIEVEMENTS = [
+  { id: "first_take", icon: "🎙", en: ["First take", "Record your first line."], de: ["Erste Aufnahme", "Nimm deine erste Zeile auf."] },
+  { id: "lines_50", icon: "🗣", goal: ["takes", 50], en: ["Chatterbox", "Record 50 lines."], de: ["Plaudertasche", "Nimm 50 Zeilen auf."] },
+  { id: "lines_250", icon: "📢", goal: ["takes", 250], en: ["Nonstop talker", "Record 250 lines."], de: ["Dauerredner", "Nimm 250 Zeilen auf."] },
+  { id: "first_round", icon: "🎬", en: ["Premiere!", "Finish your first round as a speaker."], de: ["Premiere!", "Sprich deine erste Runde zu Ende."] },
+  { id: "rounds_10", icon: "🎟", goal: ["rounds", 10], en: ["Regular", "Play 10 rounds."], de: ["Stammgast", "Spiele 10 Runden."] },
+  { id: "rounds_50", icon: "🎞", goal: ["rounds", 50], en: ["Dubbing pro", "Play 50 rounds."], de: ["Synchron-Profi", "Spiele 50 Runden."] },
+  { id: "scenes_10", icon: "🗂", goal: ["scenes", 10], en: ["Scene collector", "Play 10 different scenes."], de: ["Szenen-Sammler", "Spiele 10 verschiedene Szenen."] },
+  { id: "scenes_40", icon: "📚", goal: ["scenes", 40], en: ["Film archive", "Play 40 different scenes."], de: ["Filmarchiv", "Spiele 40 verschiedene Szenen."] },
+  { id: "best_voice", icon: "🏆", en: ["Best voice actor", "Win a rating round."], de: ["Bester Sprecher", "Gewinne eine Bewertungsrunde."] },
+  { id: "five_stars", icon: "🌟", en: ["Oscar-worthy", "Get a clean 5.0 star rating."], de: ["Oscar-reif", "Bekomme glatte 5,0 Sterne."] },
+  { id: "buddy", icon: "🤝", en: ["SynchroBuddy", "Receive a SynchroBuddy sticker."], de: ["SynchroBuddy", "Bekomme einen SynchroBuddy-Sticker."] },
+  { id: "duel_win", icon: "🥊", en: ["Duel winner", "Win a duel."], de: ["Duell-Sieger", "Gewinne ein Duell."] },
+  { id: "team_win", icon: "⚔", en: ["Team player", "Win a team battle."], de: ["Teamplayer", "Gewinne ein Team-Battle."] },
+  { id: "champion", icon: "👑", en: ["Champion", "Win a match over several rounds."], de: ["Champion", "Gewinne ein Match über mehrere Runden."] },
+  { id: "survivor", icon: "🔪", en: ["Last one standing", "Win a Battle Royale."], de: ["Letzter Überlebender", "Gewinne ein Battle Royale."] },
+  { id: "multi_role", icon: "🎭", en: ["One-man orchestra", "Speak two or more roles in one round."], de: ["Ein-Mann-Orchester", "Sprich zwei oder mehr Rollen in einer Runde."] },
+  { id: "blind", icon: "🕶", en: ["Flying blind", "Finish a round in blind mode."], de: ["Blindflug", "Spiele eine Runde im Blind-Modus."] },
+  { id: "daily", icon: "⭐", en: ["Hero of the day", "Play the scene of the day."], de: ["Tagesheld", "Spiele die Szene des Tages."] },
+  { id: "daily_3", icon: "📅", goal: ["dailyDays", 3], en: ["Keeping at it", "Play the scene of the day on 3 different days."], de: ["Dranbleiber", "Spiele die Szene des Tages an 3 verschiedenen Tagen."] },
+  { id: "arena", icon: "🎮", en: ["Arena champion", "Win a waiting-room minigame."], de: ["Arena-Champion", "Gewinne ein Warte-Arena-Spiel."] },
+  { id: "night_owl", icon: "🦉", en: ["Night owl", "Play a round between midnight and 4 am."], de: ["Nachteule", "Spiele eine Runde zwischen Mitternacht und 4 Uhr."] },
+  { id: "local_pack", icon: "📦", en: ["Homemade", "Play a local pack."], de: ["Selbstgemacht", "Spiele ein lokales Pack."] },
+];
+const ACH_KEY = "ss_achievements";
+function achLoad() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(ACH_KEY) || "null"); } catch {}
+  if (!d || typeof d !== "object") d = {};
+  if (!d.unlocked || typeof d.unlocked !== "object") d.unlocked = {};
+  const st = d.stats && typeof d.stats === "object" ? d.stats : {};
+  d.stats = {
+    takes: Math.max(0, st.takes | 0),
+    rounds: Math.max(0, st.rounds | 0),
+    scenes: Array.isArray(st.scenes) ? st.scenes.filter(x => typeof x === "string").slice(0, 2000) : [],
+    dailyDays: Array.isArray(st.dailyDays) ? st.dailyDays.filter(x => typeof x === "string").slice(-400) : [],
+  };
+  return d;
+}
+let achData = achLoad();
+function achSave() { try { localStorage.setItem(ACH_KEY, JSON.stringify(achData)); } catch {} }
+function achDef(id) { return ACHIEVEMENTS.find(a => a.id === id); }
+function achText(a) { return getLang() === "de" ? a.de : a.en; }
+function achStat(key) { const v = achData.stats[key]; return Array.isArray(v) ? v.length : (v | 0); }
+function achDailyDays() { return achData.stats.dailyDays.length; }
+function achUnlock(id) {
+  const a = achDef(id);
+  if (!a || achData.unlocked[id]) return false;
+  achData.unlocked[id] = Date.now();
+  achSave();
+  try { showToast("🏅 " + tt("Achievement unlocked: ", "Erfolg freigeschaltet: ") + a.icon + " " + achText(a)[0], "join"); } catch {}
+  try { SFX.ok(); } catch {}
+  renderAchButtons();
+  if ($("ach-overlay") && $("ach-overlay").style.display !== "none") renderAchList();
+  return true;
+}
+/** Zähler-Erfolge prüfen (z. B. 50 Zeilen). */
+function achCheckGoals() {
+  for (const a of ACHIEVEMENTS) if (a.goal && achStat(a.goal[0]) >= a.goal[1]) achUnlock(a.id);
+}
+function achOnTake() {
+  achData.stats.takes++;
+  achSave();
+  achUnlock("first_take");
+  achCheckGoals();
+}
+/** Nach dem Abgeben einer Runde als Sprecher. */
+function achOnRoundDone() {
+  if (!scene) return;
+  const st = achData.stats;
+  st.rounds++;
+  if (scene.id && !st.scenes.includes(scene.id)) st.scenes.push(scene.id);
+  const daily = typeof sceneOfTheDay === "function" ? sceneOfTheDay() : null;
+  if (daily && scene.id === daily.id) {
+    const heute = localDayKey();
+    if (!st.dailyDays.includes(heute)) st.dailyDays.push(heute);
+    achUnlock("daily");
+  }
+  achSave();
+  achUnlock("first_round");
+  if (myRoles().length >= 2) achUnlock("multi_role");
+  if (scene.blind) achUnlock("blind");
+  if (packMode) achUnlock("local_pack");
+  const h = new Date().getHours();
+  if (h >= 0 && h < 4) achUnlock("night_owl");
+  achCheckGoals();
+}
+function achOnRateResult(results) {
+  if (!Array.isArray(results) || !results.length) return;
+  const mine = results.find(r => r && r.id === myId);
+  if (!mine) return;
+  if (results.length >= 2 && results[0].id === myId) achUnlock("best_voice");
+  const stars = mine.avgStars != null ? mine.avgStars : mine.avg;
+  if (typeof stars === "number" && stars >= 4.999 && (mine.votes || 0) > 0) achUnlock("five_stars");
+  if ((mine.buddies || 0) > 0) achUnlock("buddy");
+}
+// Duell-Siege landen auch im Arena-Siege-Zähler (mgWins) — für den Arena-Erfolg abziehen
+let achDuelWinsSession = 0;
+function achOnDuelResult(result) {
+  if (!result || !duelInfo) return;
+  const winId = result.winner === "a" ? duelInfo.aId : result.winner === "b" ? duelInfo.bId : null;
+  if (winId && winId === myId) { achDuelWinsSession++; achUnlock("duel_win"); }
+}
+function achOnTeamResult(won) { if (won) achUnlock("team_win"); }
+function achOnFinal(list, championName) {
+  if (!Array.isArray(list) || !list.length) return;
+  if (championName) {
+    const me = players.find(p => p.id === myId);
+    if (me && me.name === championName) achUnlock("survivor");
+  } else if (list[0] && list[0].id === myId && list.length >= 2) achUnlock("champion");
+}
+function achOnWins() { if ((mgWins[myId] || 0) > achDuelWinsSession) achUnlock("arena"); }
+
+function renderAchButtons() {
+  const n = Object.keys(achData.unlocked).filter(id => achDef(id)).length;
+  const label = "🏅 " + tt("Achievements", "Erfolge") + " · " + n + "/" + ACHIEVEMENTS.length;
+  document.querySelectorAll(".ach-open").forEach(b => { if (b.textContent !== label) b.textContent = label; });
+}
+function renderAchList() {
+  const box = $("ach-list");
+  if (!box) return;
+  box.innerHTML = ACHIEVEMENTS.map(a => {
+    const on = !!achData.unlocked[a.id];
+    const [title, desc] = achText(a);
+    const prog = !on && a.goal ? ` <span class="ach-prog">${Math.min(achStat(a.goal[0]), a.goal[1])}/${a.goal[1]}</span>` : "";
+    const when = on ? `<span class="ach-when">${new Date(achData.unlocked[a.id]).toLocaleDateString(getLang() === "de" ? "de-DE" : "en-GB")}</span>` : "";
+    return `<div class="ach-row${on ? " on" : ""}"><span class="ach-ico">${on ? a.icon : "🔒"}</span>
+      <span class="ach-txt"><b>${esc(title)}</b>${prog}<br><span class="ach-desc">${esc(desc)}</span></span>${when}</div>`;
+  }).join("");
+  const n = Object.keys(achData.unlocked).filter(id => achDef(id)).length;
+  if ($("ach-count")) $("ach-count").textContent = n + " / " + ACHIEVEMENTS.length;
+}
+function openAchievements() {
+  const o = $("ach-overlay");
+  if (!o) return;
+  renderAchList();
+  o.style.display = "flex";
+  try { SFX.click(); } catch {}
+  const c = $("btn-ach-close"); if (c) c.focus();
+}
+function closeAchievements() { const o = $("ach-overlay"); if (o) o.style.display = "none"; }
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest && e.target.closest(".ach-open");
+  if (b) openAchievements();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAchievements(); });
+window.addEventListener("DOMContentLoaded", () => {
+  renderAchButtons();
+  const o = $("ach-overlay");
+  if (o) o.addEventListener("click", (e) => { if (e.target === o) closeAchievements(); });
+  const c = $("btn-ach-close"); if (c) c.onclick = closeAchievements;
+});
+
+// ═════════════════════════════════════════════════════════════
+// KURZE ANLEITUNG — erscheint beim allerersten Besuch, jederzeit überspringbar,
+// später über „❓ So geht's“ auf der Startseite wieder aufrufbar.
+// ═════════════════════════════════════════════════════════════
+const TUT_KEY = "ss_tutorial_done";
+const TUT_STEPS = [
+  { ico: "👋", en: ["Welcome to Synchronstudio!", "You dub film scenes together with friends: everyone voices a role, and at the end the video plays with your voices. Four quick steps — or skip right away."],
+    de: ["Willkommen im Synchronstudio!", "Ihr synchronisiert zusammen mit Freunden Filmszenen: Jeder spricht eine Rolle, am Ende läuft das Video mit euren Stimmen. Vier kurze Schritte — oder gleich überspringen."] },
+  { ico: "🎧", en: ["Headphones & mic", "Put on headphones — otherwise your mic records the film sound too. Do one test recording, then click “Sounds good”."],
+    de: ["Kopfhörer & Mikro", "Setz Kopfhörer auf — sonst nimmt dein Mikro den Filmton mit. Mach eine Test-Aufnahme und klick dann „Klingt gut“."] },
+  { ico: "🚪", en: ["Create or join a room", "One person creates a room and sends the code or invite link to the others. Everyone else joins with the 5-digit code."],
+    de: ["Raum erstellen oder beitreten", "Eine Person erstellt einen Raum und schickt Code oder Einladungslink an die anderen. Alle anderen treten mit dem 5-stelligen Code bei."] },
+  { ico: "🎭", en: ["Role & recording booth", "Pick a scene and a role, then “I’m ready”. In the booth you record line by line — listen to the original first and retake anything you like."],
+    de: ["Rolle & Aufnahme-Kabine", "Szene und Rolle wählen, dann „Bin bereit“. In der Kabine sprichst du Zeile für Zeile ein — hör dir vorher das Original an und nimm beliebig oft neu auf."] },
+  { ico: "🎬", en: ["Premiere!", "When everyone is done, your version plays in the cinema. Then you hand out stars. Also try Match, Duel and Team battle — and collect achievements 🏅."],
+    de: ["Premiere!", "Wenn alle fertig sind, läuft eure Version im Kinosaal. Danach vergebt ihr Sterne. Probiert auch Match, Duell und Team-Battle aus — und sammelt Erfolge 🏅."] },
+];
+let tutStep = 0;
+function renderTutorial() {
+  const s = TUT_STEPS[tutStep];
+  if (!s) return;
+  const [title, text] = getLang() === "de" ? s.de : s.en;
+  $("tut-ico").textContent = s.ico;
+  $("tut-title").textContent = title;
+  $("tut-text").textContent = text;
+  $("tut-step").textContent = tt("Step ", "Schritt ") + (tutStep + 1) + " / " + TUT_STEPS.length;
+  $("tut-dots").innerHTML = TUT_STEPS.map((_, i) => `<span class="tut-dot${i === tutStep ? " on" : ""}"></span>`).join("");
+  $("tut-back").style.visibility = tutStep > 0 ? "visible" : "hidden";
+  $("tut-next").textContent = tutStep < TUT_STEPS.length - 1 ? tt("Next →", "Weiter →") : tt("Let’s go! 🎬", "Los geht’s! 🎬");
+  $("tut-skip").textContent = tt("✕ Skip tutorial", "✕ Anleitung überspringen");
+}
+function openTutorial() {
+  const o = $("tut-overlay");
+  if (!o) return;
+  tutStep = 0;
+  renderTutorial();
+  o.style.display = "flex";
+  const n = $("tut-next"); if (n) n.focus();
+}
+function closeTutorial() {
+  const o = $("tut-overlay");
+  if (!o || o.style.display === "none") return;
+  o.style.display = "none";
+  try { localStorage.setItem(TUT_KEY, "1"); } catch {}
+}
+window.addEventListener("DOMContentLoaded", () => {
+  if (!$("tut-overlay")) return;
+  $("tut-skip").onclick = () => { closeTutorial(); try { SFX.click(); } catch {} };
+  $("tut-next").onclick = () => {
+    try { SFX.click(); } catch {}
+    if (tutStep < TUT_STEPS.length - 1) { tutStep++; renderTutorial(); }
+    else closeTutorial();
+  };
+  $("tut-back").onclick = () => { if (tutStep > 0) { tutStep--; renderTutorial(); try { SFX.click(); } catch {} } };
+  document.querySelectorAll(".tut-open").forEach(b => b.onclick = openTutorial);
+  document.addEventListener("keydown", (e) => {
+    if ($("tut-overlay").style.display === "none") return;
+    if (e.key === "Escape") closeTutorial();
+    else if (e.key === "ArrowRight") $("tut-next").click();
+    else if (e.key === "ArrowLeft") $("tut-back").click();
+  });
+  document.addEventListener("ss-langchange", () => { if ($("tut-overlay").style.display !== "none") renderTutorial(); });
+  let seen = false;
+  try { seen = localStorage.getItem(TUT_KEY) === "1"; } catch {}
+  if (!seen) openTutorial();
+});
+
+// ═════════════════════════════════════════════════════════════
+// SZENE DES TAGES — wechselt jeden Tag um Mitternacht automatisch.
+// Kein Server nötig: aus dem Datum wird per Hash eine Szene bestimmt, deshalb sehen
+// alle am selben Tag dieselbe Szene. Nie zwei Tage hintereinander dieselbe.
+// ═════════════════════════════════════════════════════════════
+function localDayKey(d) {
+  const x = d || new Date();
+  return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
+}
+function hashStr(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function dailyCandidates() {
+  // Nach ID sortiert: die Wahl hängt so nicht von der Reihenfolge in scenes.json ab
+  return sceneList
+    .filter(s => s && s.id && ((s.lines && s.lines.length) || s.lineCount > 0) && !HINTEN_ANSTELLEN.has(s.id))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+let dailyCache = { key: "", n: -1, scene: null };
+function sceneOfTheDay(date) {
+  // Pro Tag nur einmal rechnen — das Raster fragt für jede Kachel nach
+  if (!date && dailyCache.key === localDayKey() && dailyCache.n === sceneList.length) return dailyCache.scene;
+  const list = dailyCandidates();
+  if (!list.length) return null;
+  const tag = date ? new Date(date) : new Date();
+  const pick = (d) => list[hashStr("ss-daily|" + localDayKey(d)) % list.length];
+  const heute = pick(tag);
+  const gestern = new Date(tag); gestern.setDate(gestern.getDate() - 1);
+  const result = (list.length > 1 && pick(gestern).id === heute.id) ? list[(list.indexOf(heute) + 1) % list.length] : heute;
+  if (!date) dailyCache = { key: localDayKey(), n: sceneList.length, scene: result };
+  return result;
+}
+function isSceneOfTheDay(s) { const d = sceneOfTheDay(); return !!(d && s && s.id === d.id); }
+/** Restzeit bis Mitternacht, z. B. „5 Std. 12 Min.“ */
+function dailyRestText() {
+  const now = new Date(), next = new Date(now); next.setHours(24, 0, 0, 0);
+  const min = Math.max(1, Math.round((next - now) / 60000));
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? tt(`${h} h ${m} min`, `${h} Std. ${m} Min.`) : tt(`${m} min`, `${m} Min.`);
+}
+function dailyFacesHtml(s) {
+  return Object.values(s.avatars || {}).slice(0, 3)
+    .map(src => `<img src="${esc(assetUrl(src))}" alt="" loading="lazy" decoding="async">`).join("");
+}
+let dailyShownKey = "";
+function renderDaily() {
+  const d = sceneOfTheDay();
+  dailyShownKey = localDayKey();
+  const lines = d ? ((d.lines && d.lines.length) || d.lineCount || 0) : 0;
+  const meta = d ? `${roleCountLabel((d.roles || []).length)} · ${lines} ${tt("lines", "Zeilen")} · ${tt("new scene in ", "neue Szene in ")}${dailyRestText()}` : "";
+  const card = $("daily-card"), body = $("daily-body");
+  if (card && body) {
+    card.style.display = d ? "" : "none";
+    if (d) setHtmlIfChanged(body, `<div class="daily-row"><span class="db-faces">${dailyFacesHtml(d)}</span>
+      <span class="db-text"><span class="db-title">${esc(sceneTitleDisplay(d.title))}</span><br><span class="db-meta">${esc(meta)}</span></span></div>
+      <p class="sub" style="margin:10px 0 0">${tt("Same scene for everyone today — create a room and pick it, or tell your host.", "Heute für alle dieselbe Szene — Raum erstellen und auswählen oder dem Host Bescheid sagen.")}${achDailyHint()}</p>`);
+  }
+  const banner = $("daily-banner");
+  if (banner) {
+    banner.style.display = d ? "" : "none";
+    if (d) {
+      setHtmlIfChanged(banner, `<span class="db-faces">${dailyFacesHtml(d)}</span>
+        <span class="db-text"><span class="tag" style="color:var(--amber)">⭐ ${tt("Scene of the day", "Szene des Tages")}</span><br><span class="db-title">${esc(sceneTitleDisplay(d.title))}</span> <span class="db-meta">· ${esc(meta)}</span></span>
+        <button type="button" class="primary" id="btn-daily-load">${tt("▶ Load", "▶ Laden")}</button>`);
+      const btn = $("btn-daily-load");
+      if (btn) btn.onclick = () => {
+        const i = sceneList.findIndex(s => s.id === d.id);
+        const sel = $("scene-select");
+        if (i < 0 || !sel) return;
+        sel.value = String(i);
+        renderSceneGrid();
+        $("btn-load-scene").click();
+      };
+    }
+  }
+}
+function achDailyHint() {
+  const n = typeof achDailyDays === "function" ? achDailyDays() : 0;
+  return n ? " " + tt(`You played the scene of the day on ${n} day${n > 1 ? "s" : ""}.`, `Du hast die Szene des Tages schon an ${n} Tag${n > 1 ? "en" : ""} gespielt.`) : "";
+}
+// Tageswechsel automatisch mitbekommen (auch wenn die Seite über Nacht offen bleibt)
+setInterval(() => {
+  if (!sceneList.length) return;
+  if (dailyShownKey !== localDayKey()) {
+    renderDaily();
+    if ($("scene-grid") && $("scene-grid").childElementCount) renderSceneGrid();
+    if (match.mode === "team") populateTeamSceneSelect();
+  } else renderDaily();   // Restzeit aktualisieren
+}, 60000);
+// Szenen-Index gleich beim Start holen, damit die Startseite die Tages-Szene zeigen kann
+window.addEventListener("load", () => {
+  setTimeout(() => { loadSceneList().then(() => renderDaily()).catch(() => {}); }, 1200);
+});
+
 function renderSceneGrid(filter) {
   renderLibraryFilters();
+  renderDaily();
   const grid = $("scene-grid");
   if (!grid) return;
   const q = (filter == null ? ($("scene-search") ? $("scene-search").value : "") : filter).trim().toLowerCase();
@@ -5557,7 +5963,7 @@ function renderSceneGrid(filter) {
       .map(src => `<img src="${esc(assetUrl(src))}" alt="" loading="lazy" decoding="async">`)
       .join("");
     return `<div class="scene-entry"><button type="button" class="scene-tile${String(i) === current ? " sel" : ""}" data-i="${i}">
-      <span class="st-thumb">${faces ? `<span class="st-faces">${faces}</span>` : `<span class="st-ph">🎬</span>`}<span class="st-badge">${roleCountLabel(s.roles.length).replace(" ", "&nbsp;")}</span></span>
+      <span class="st-thumb">${faces ? `<span class="st-faces">${faces}</span>` : `<span class="st-ph">🎬</span>`}<span class="st-badge">${roleCountLabel(s.roles.length).replace(" ", "&nbsp;")}</span>${isSceneOfTheDay(s) ? `<span class="st-daily">⭐ ${tt("TODAY", "HEUTE")}</span>` : ""}</span>
       <span class="st-title">${esc(sceneTitleDisplay(s.title))}</span>
       ${sceneChangeLabel(s)?`<span class="st-meta st-change">${sceneChangeLabel(s)}</span>`:""}
       <span class="st-meta">${d ? d.emoji + " " + esc(d.label) : "—"}${(s.lines && s.lines.length) || s.lineCount ? " · " + ((s.lines && s.lines.length) || s.lineCount) + tt(" lines", " Zeilen") : ""}</span>
@@ -6180,7 +6586,7 @@ function rejoinPlaybackFlags() {
   return {
     premiereLocked: !!premiereLocked,
     ratingOpen: isRatingCardOpen(),
-    playerGains: Object.assign(Object.create(null), premPlayerGains),
+    playerGains: Object.assign({}, premPlayerGains),
   };
 }
 
@@ -6363,6 +6769,7 @@ function playerCard(p) {
     <div class="pinfo">
       <span class="pname">${esc(p.name)}${micDot}</span>
       ${p.eliminated ? '<span class="prole" style="color:var(--hot)">' + tt("🔪 eliminated", "🔪 eliminiert") + '</span>' : `<span class="prole ${role ? "" : "empty"}">${role ? "🎭 " + esc(role) : tt("no role yet", "noch keine Rolle")}</span>`}
+      ${match.mode === "team" && teamOf(p) ? `<span class="tag team-tag team-${p.team}">${teamIcon(p.team)} ${teamLabel(p.team)}</span>` : ""}
       <span class="player-readiness">${esc(playerReadiness(p))}</span>
       ${wegTag}${loadHtml}${prog}
     </div>
@@ -6387,6 +6794,7 @@ function setHtmlIfChanged(el, html) {
 function renderPlayers() {
   const me=players.find(p=>p.id===myId);if(me)me.micState=currentMicState();
   setHtmlIfChanged($("player-list"), players.map(playerCard).join(""));
+  if (match.mode === "team") renderTeamSetup();
   const n=groupSize();if(n!==libraryGroupCount){libraryGroupCount=n;renderSceneGrid();}
 }
 // Offline-Restzeit: nur Text-Tags ticken, kein kompletter Listen-Rebuild
@@ -6520,12 +6928,16 @@ function hostSettingsChanged() {
     syncModePicker(match.mode);
     const rnd = match.mode === "rounds" || match.mode === "elimination";
     const duell = match.mode === "duell";
+    const team = match.mode === "team";
     $("rounds-opts").style.display = (match.mode === "rounds") ? "" : "none";
-    $("host-scene").style.display = (rnd || duell) ? "none" : "";
+    $("host-scene").style.display = (rnd || duell || team) ? "none" : "";
     $("duel-setup").style.display = duell ? "" : "none";
+    $("team-setup").style.display = team ? "" : "none";
     if (duell) populateDuelSceneSelect();
-    if (!rnd && !duell) loadSceneList();
+    if (team) { loadSceneList().then(populateTeamSceneSelect).catch(() => {}); renderTeamSetup(); }
+    if (!rnd && !duell && !team) loadSceneList();
     if (match.mode !== prevMode) {
+      resetTeamRound();
       scene = null; clearSceneVideoState();
       scenePool = []; duelInfo = null; duelStagedScene = null;
       players.forEach(p => { p.role = null; p.extraRoles = []; p.ready = false; p.timesSpectated = 0; p.timesPlayed = 0; p.eliminated = false; });
@@ -6545,16 +6957,20 @@ function hostSettingsChanged() {
   // Im Runden- UND Battle-Royale-Modus ist alles Zufall: Rollenwahl & Szenenwahl werden ausgeblendet
   const rnd = match.mode === "rounds" || match.mode === "elimination";
   const duell = match.mode === "duell";
+  const team = match.mode === "team";
   $("rounds-opts").style.display = (match.mode === "rounds") ? "" : "none";
-  $("host-scene").style.display = (rnd || duell) ? "none" : "";
+  $("host-scene").style.display = (rnd || duell || team) ? "none" : "";
   $("duel-setup").style.display = duell ? "" : "none";
+  $("team-setup").style.display = team ? "" : "none";
   if (duell) populateDuelSceneSelect();
+  if (team) { ensureTeams(); loadSceneList().then(populateTeamSceneSelect).catch(() => {}); renderTeamSetup(); }
   // WICHTIG: Szenenliste immer (neu) laden, damit das Dropdown im Freien Modus gefüllt ist
-  if (!rnd && !duell) loadSceneList();
+  if (!rnd && !duell && !team) loadSceneList();
 
   // FIX: Beim Moduswechsel eine evtl. schon geladene Szene/Rollen zurücksetzen —
   // sonst bleiben z.B. manuell gewählte Free-Modus-Rollen im Runden-Modus aktiv nutzbar.
   if (match.mode !== prevMode) {
+    resetTeamRound();
     scene = null; clearSceneVideoState();
     scenePool = []; duelInfo = null; duelStagedScene = null;
     players.forEach(p => { p.role = null; p.extraRoles = []; p.ready = false; p.timesSpectated = 0; p.timesPlayed = 0; p.eliminated = false; });
@@ -6584,6 +7000,8 @@ function renderSettingsView(s) {
     el.innerHTML = `🔪 <b>${tt("Battle Royale · Round ", "Battle Royale · Runde ")}${round}</b> · ${activeLeft} ${tt("still in", "noch im Rennen")} · 🎲 ${tt("random scenes & roles", "Zufalls-Szenen &amp; -Rollen")} · 🕶 ${tt("Blind", "Blind")}: ${onOff}` + (iAmLogicalHost() ? "" : ' <span class="tag">(Host)</span>');
   } else if (mode === "rounds") {
     el.innerHTML = `🏆 <b>${tt("Match · Round ", "Match · Runde ")}${round}/${rounds}</b> · 🎲 ${tt("random scenes & roles", "Zufalls-Szenen &amp; -Rollen")} · 🕶 ${tt("Blind", "Blind")}: ${onOff}` + (iAmLogicalHost() ? "" : ' <span class="tag">(Host)</span>');
+  } else if (mode === "team") {
+    el.innerHTML = `⚔ <b>${tt("Team battle", "Team-Battle")}</b> · ${tt("both teams dub the same scene, then everyone rates the other team", "beide Teams synchronisieren dieselbe Szene, danach bewertet jeder das andere Team")}` + (iAmLogicalHost() ? "" : ' <span class="tag">(Host)</span>');
   } else if (mode === "duell") {
     el.innerHTML = `🥊 <b>${tt("Duel mode", "Duell-Modus")}</b> · ${tt("Host picks scene, role &amp; both duelists · everyone else watches &amp; votes after", "Host wählt Szene, Rolle &amp; die zwei Duellanten · Rest schaut zu &amp; stimmt danach ab")}` + (iAmLogicalHost() ? "" : ' <span class="tag">(Host)</span>');
   } else {
@@ -6594,6 +7012,7 @@ function renderWins() {
   const el = $("mg-wins");
   if (!el) return;
   const entries = Object.entries(mgWins).sort((a, b) => b[1] - a[1]);
+  achOnWins();
   el.innerHTML = entries.length ? tt("🎖 Arena wins: ", "🎖 Arena-Siege: ") + entries.map(([pid, n]) => `<b>${esc(nameOf(pid))}</b> ×${n}`).join(" · ") : "";
 }
 function addWin(pid) {
@@ -6627,8 +7046,8 @@ $("btn-ready").onclick = async () => {
 
 function checkStartable() {
   if (!iAmLogicalHost()) return;
-  if (match.mode === "duell") {
-    // Duell hat seinen eigenen Start-Button (🥊 Duell starten) — der normale Button bleibt aussen vor
+  if (match.mode === "duell" || match.mode === "team") {
+    // Duell/Team-Battle haben ihren eigenen Start-Button (🥊 Duell starten) — der normale Button bleibt aussen vor
     $("btn-start").style.display = "none";
     return;
   }
@@ -7101,6 +7520,28 @@ function attachPackBacking(videoEl, url) {
   packBackingHandlers = { el: videoEl, map };
 }
 
+/** Zeigt der Browser von diesem Video ein Bild? (false = nur Ton / nicht abspielbar) */
+function packVideoHasPicture(url) {
+  return new Promise(resolve => {
+    if (!url) { resolve(true); return; }
+    const v = document.createElement("video");
+    let done = false;
+    const fertig = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { v.removeAttribute("src"); v.load(); } catch {}
+      resolve(ok);
+    };
+    const timer = setTimeout(() => fertig(true), 8000);   // unklar → lieber nicht warnen
+    v.preload = "metadata";
+    v.muted = true;
+    v.onloadedmetadata = () => fertig((v.videoWidth || 0) > 0);
+    v.onerror = () => fertig(false);
+    v.src = url;
+  });
+}
+
 // ── Was passiert, wenn jemand eine Datei auswählt ──
 async function onPackFile(file) {
   if (!file) return;
@@ -7123,6 +7564,13 @@ async function onPackFile(file) {
       packStatus(tt("⚠ No _backing_track in the pack — the scene will play silent.",
         "⚠ Kein _backing_track im Pack — die Szene läuft ohne Hintergrundton."), "warn", true);
     }
+    // Choicer-Voicer-Packs haben meist dub_video.ogv (Theora). Chrome und Safari spielen das
+    // nicht mehr ab — man hört nur den Ton. Lieber gleich klar sagen als schwarzes Bild zeigen.
+    packVideoHasPicture(built.scene.videoUrl).then(ok => {
+      if (ok || !myPack || myPack.fp !== fp) return;
+      packStatus(tt("⚠ Your browser can’t show this pack’s video (probably .ogv — Chrome and Safari no longer play it), you’ll only hear the sound. Tip: export the pack as MP4 in the scene editor, or use Firefox.",
+        "⚠ Dein Browser kann das Video dieses Packs nicht anzeigen (vermutlich .ogv — Chrome und Safari spielen das nicht mehr ab), du hörst nur den Ton. Tipp: Pack im Szenen-Editor als MP4 exportieren oder Firefox nehmen."), "warn", true);
+    });
     announceMyPack();
     if (isHost) applyPackSceneIfReady();
     renderPackUi();
@@ -7402,7 +7850,7 @@ function planeOfflineNachpruefung() {
   const rest = Math.max(...wartende.map(p => OFFLINE_SCHONZEIT_MS - (Date.now() - (p.offlineSeit || Date.now()))));
   clearTimeout(offlineNachpruefTimer);
   offlineNachpruefTimer = setTimeout(() => {
-    try { maybeFinishTracks(); syncForceMixBtn(); } catch (e) { console.warn("Nachprüfung:", e); }
+    try { maybeFinishTracks(); maybeFinishTeam(); syncForceMixBtn(); } catch (e) { console.warn("Nachprüfung:", e); }
   }, Math.max(1000, rest + 250));
 }
 /** Rolle freigeben — egal ob Haupt- oder Zusatzrolle. */
@@ -7501,7 +7949,9 @@ function startBooth() {
     $("duel-waiting-note").style.display = match.mode === "duell" ? "" : "none";
     const me0 = players.find(p => p.id === myId);
     const bench = me0 ? (me0.timesSpectated || 0) : 0;
-    status("wait-status", match.mode === "duell"
+    status("wait-status", match.mode === "team"
+      ? tt("⚔ Team battle running — your team has enough speakers this time. You’ll rate the other team afterwards!", "⚔ Team-Battle läuft — dein Team hat diesmal genug Sprecher. Danach bewertest du das andere Team!")
+      : match.mode === "duell"
       ? tt("🥊 Duel running — ", "🥊 Duell läuft — ") + nameOf(duelInfo?.aId) + " vs " + nameOf(duelInfo?.bId) + tt(" record independently. Then you hear both versions and vote!", " nehmen unabhängig voneinander auf. Danach hört ihr beide Versionen und stimmt ab!")
       : tt("🍿 You’re watching — the premiere starts automatically when everyone’s done.", "🍿 Du bist Zuschauer — die Premiere startet automatisch, wenn alle fertig sind.") + (match.mode === "rounds" ? tt(" (Next round you’re guaranteed a preferred slot, banked ", " (Nächste Runde bist du garantiert bevorzugt dran, ") + bench + tt("× so far.)", "x gebankt bisher.)") : ""));
     return;
@@ -8090,6 +8540,7 @@ async function onLineRecorded() {
   }
   if (outtakeBufOk(buf)) {
     takes[l.idx] = buf;
+    achOnTake();
     $("btn-line-play").disabled = false;
     $("btn-line-next").disabled = false;
     status("booth-status", tt("Take in the can! Listen or continue.", "Take im Kasten! Anhören oder direkt weiter."));
@@ -8469,8 +8920,16 @@ function finishBooth() {
   const items = myLines.filter(l => takes[l.idx] && takes[l.idx] !== "SKIP")
     .map(l => ({ startAt: l.t, idx: l.idx, buf: takes[l.idx], effect: submitEffectFor(l), fxAmount: myEffectAmounts[l.idx], boost: myLineGains[l.idx], pan: submitPanFor(l), gate: micSettings.gate }));
   const ots = serializeOuttakes(true);
+  if (items.length) achOnRoundDone();
   const boostByIdx = boostMapFromItems(items);
   const panByIdx = panMapFromItems(items);
+  if (match.mode === "team" && teamInfo) {
+    const tracks = tracksByRole(items);
+    if (isHost) collectTeamSubmit(myId, tracks);
+    else sendHost({ t: "teamSubmit", tracks, ...metaMapsFromTracks(tracks) });
+    status("wait-status", tt("⚔ Your take is in the can! Waiting for both teams …", "⚔ Dein Take ist im Kasten! Warte auf beide Teams …"));
+    return;
+  }
   if (match.mode === "duell" && duelInfo) {
     if (isHost) collectDuelSubmit(myId, items);
     else sendHost({ t: "duelSubmit", playerId: myId, items, boostByIdx, panByIdx });
@@ -8605,7 +9064,8 @@ const TTT_WINS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6
 function tttAction(a) { if (isHost) tttHandle(a, myId); else sendHost({ t: "ttt", a }); }
 function tttHandle(a, pid) {
   if (a.k === "join" && ttt.p.length < 2 && !ttt.p.includes(pid) && !ttt.winner) ttt.p.push(pid);
-  if (a.k === "move" && !ttt.winner && ttt.p.length === 2 && ttt.p[ttt.turn] === pid && ttt.board[a.i] == null) {
+  if (a.k === "move" && ttt.winner == null && Number.isInteger(a.i) && a.i >= 0 && a.i < 9 &&
+      ttt.p.length === 2 && ttt.p[ttt.turn] === pid && ttt.board[a.i] == null) {
     ttt.board[a.i] = ttt.turn === 0 ? "X" : "O";
     for (const w of TTT_WINS) if (w.every(i => ttt.board[i] === ttt.board[w[0]] && ttt.board[i])) { ttt.winner = ttt.turn; addWin(ttt.p[ttt.turn]); }
     if (ttt.winner == null && ttt.board.every(c => c)) ttt.winner = -1;   // Unentschieden
@@ -9193,7 +9653,8 @@ function finishRating() {
 
   const activeLeft = players.filter(p => !p.eliminated).length;
   const btn = $("btn-next-round");
-  btn.style.display = "";
+  nextRoundArmed = true;
+  btn.style.display = iAmLogicalHost() ? "" : "none";
   if (match.mode === "elimination") {
     btn.textContent = activeLeft > 1 ? (tt("▶ Next round (", "▶ Nächste Runde (") + activeLeft + tt(" still in)", " noch im Rennen)")) : tt("🏆 Crown the champion!", "🏆 Champion küren!");
   } else {
@@ -9201,8 +9662,18 @@ function finishRating() {
   }
 }
 
-$("btn-next-round").onclick = async () => {
-  if (!isHost) return;
+$("btn-next-round").onclick = () => {
+  if (!iAmLogicalHost()) return;
+  $("btn-next-round").style.display = "none";
+  if (!isHost) { sendHost({ t: "hostCmd", cmd: "nextRound" }); return; }
+  advanceMatch();
+};
+// Nur einmal pro Bewertungsrunde weiterschalten — sonst zählte ein Doppelklick (oder Host +
+// weitergegebener Host gleichzeitig) die Runde zweimal hoch.
+let nextRoundArmed = false;
+async function advanceMatch() {
+  if (!isHost || !nextRoundArmed) return;
+  nextRoundArmed = false;
   $("btn-next-round").style.display = "none";
 
   const activeLeft = players.filter(p => !p.eliminated).length;
@@ -9245,6 +9716,7 @@ function startNewRound() {
 
 // ═══ ANIMIERTES FINALE — Awards-Show mit Riser, Scheinwerfer, Applaus ═══
 function showFinal(list, rounds, championName) {
+  try { achOnFinal(list, championName); } catch (e) { console.warn("Erfolge:", e); }
   show("scr-final");
   $("leave-btn").style.display = "";
   // Kinosaal/Vorhang nur hier am Podest — kurz auf, dann Reveal
@@ -9396,6 +9868,8 @@ $("btn-back-lobby").onclick = () => {
 };
 function backToLobby(keepMatch) {
   exitCinemaMode();
+  resetTeamRound();
+  nextRoundArmed = false;
   const c = $("cinema-curtains"); if (c) c.classList.remove("show", "open");
   if (!keepMatch) { match.round = 1; match.totals = {}; match.buddyGivers = {}; myBuddyUsed = false; }
   players.forEach(p => { p.ready = false; p.done = 0; p.total = 0; p.prem = false; p.premPct = 0; });
@@ -9416,6 +9890,11 @@ function backToLobby(keepMatch) {
   if (!keepMatch) status("lobby-status", tt("🏠 Back in the lobby!", "🏠 Zurück in der Lobby!"));
 }
 function showRateResult(results, eliminatedName) {
+  try { achOnRateResult(results); } catch (e) { console.warn("Erfolge:", e); }
+  if (!isHost && iAmLogicalHost()) {
+    const nb = $("btn-next-round");
+    if (nb) { nb.textContent = tt("▶ Continue", "▶ Weiter"); nb.style.display = ""; }
+  }
   $("btn-rate-submit").style.display = "none";
   $("btn-rate-force").style.display = "none";
   $("rate-rows").innerHTML = "";
@@ -10512,14 +10991,16 @@ async function loadDuelSequence(dataA, dataB, info) {
   const stale = () => token !== mixLoadToken || selectedScene !== scene;
   pendingDuelGo = false;
   window.__duelRunSequence = null;
-  duelInfo = info;
+  const isTeam = !!(info && info.kind === "team");
+  if (isTeam) teamInfo = info;
+  else duelInfo = info;
   show("scr-playback");
   $("btn-replay").style.display = "none"; $("btn-download-audio").style.display = "none";
   $("btn-download").style.display = "none"; $("btn-again").style.display = "none"; $("btn-back").style.display = "none";
   const otDuel = $("btn-outtakes"); if (otDuel) otDuel.style.display = "none";
   $("prem-status").textContent = "";   // veraltete "X/Y geladen"-Anzeige vom normalen Modus ausblenden, gilt hier nicht
   $("btn-prem-start").style.display = "none";
-  status("play-status", tt("🥊 Preparing both versions …", "🥊 Bereite beide Versionen vor …"));
+  status("play-status", (isTeam ? "⚔ " : "🥊 ") + tt("Preparing both versions …", "Bereite beide Versionen vor …"));
 
   const itemsA = await decodeDuelData(dataA);
   if (stale()) return;
@@ -10538,7 +11019,7 @@ async function loadDuelSequence(dataA, dataB, info) {
 
   if (stale()) return;
   const playOnce = (items, label) => new Promise(resolve => {
-    status("play-status", "🥊 " + label);
+    status("play-status", (isTeam ? "⚔ " : "🥊 ") + label);
     mixItems = items;
     const signal = sceneAudioController.signal;
     const finish = () => {
@@ -10557,27 +11038,42 @@ async function loadDuelSequence(dataA, dataB, info) {
     sequenceStarted = true;
     $("btn-duel-play-start").style.display = "none";
     if (stale()) return;
-    await playOnce(itemsA, "Take 1: " + nameOf(info.aId));
+    await playOnce(itemsA, "Take 1: " + (isTeam ? teamIcon("a") + " " + teamLabel("a") + " (" + teamNames("a", info.a) + ")" : nameOf(info.aId)));
     if (stale()) return;
     for (let s = 3; s >= 1; s--) { if (stale()) return; status("play-status", tt("⏳ Take 2 in ", "⏳ Take 2 in ") + s + " …"); await new Promise(r => setTimeout(r, 1000)); }
     if (stale()) return;
-    await playOnce(itemsB, "Take 2: " + nameOf(info.bId));
-    if (!stale()) showDuelVote();
+    await playOnce(itemsB, "Take 2: " + (isTeam ? teamIcon("b") + " " + teamLabel("b") + " (" + teamNames("b", info.b) + ")" : nameOf(info.bId)));
+    if (!stale()) (isTeam ? showTeamVote() : showDuelVote());
   };
 
   if (isHost) {
-    status("play-status", tt("✅ Both versions ready — you decide when it starts!", "✅ Beide Versionen bereit — du entscheidest, wann's losgeht!"));
-    $("btn-duel-play-start").style.display = "";
-    $("btn-duel-play-start").onclick = () => { broadcast({ t: "duelPlayGo" }); runSequence(); };
+    // Raum-Besitzer: startet selbst oder auf Befehl des (weitergegebenen) Hosts
+    window.__duelHostGo = () => { window.__duelHostGo = null; broadcast({ t: "duelPlayGo" }); runSequence(); };
+    status("play-status", iAmLogicalHost()
+      ? tt("✅ Both versions ready — you decide when it starts!", "✅ Beide Versionen bereit — du entscheidest, wann's losgeht!")
+      : tt("✅ Ready — waiting for the host to start …", "✅ Bereit — warte, bis der Host startet …"));
+    $("btn-duel-play-start").style.display = iAmLogicalHost() ? "" : "none";
+    $("btn-duel-play-start").onclick = () => { if (window.__duelHostGo) window.__duelHostGo(); };
+    if (pendingHostDuelGo) { pendingHostDuelGo = false; window.__duelHostGo(); }
   } else {
     status("play-status", tt("✅ Ready — waiting for the host to start …", "✅ Bereit — warte, bis der Host startet …"));
     window.__duelRunSequence = runSequence;   // Gast wartet auf die "duelPlayGo"-Nachricht vom Host
+    if (iAmLogicalHost()) {
+      // Weitergegebener Host: Startknopf zeigen, der Raum-Besitzer spielt dann für alle ab
+      status("play-status", tt("✅ Both versions ready — you decide when it starts!", "✅ Beide Versionen bereit — du entscheidest, wann's losgeht!"));
+      $("btn-duel-play-start").style.display = "";
+      $("btn-duel-play-start").onclick = () => {
+        $("btn-duel-play-start").style.display = "none";
+        sendHost({ t: "hostCmd", cmd: "duelPlayGo" });
+      };
+    }
     if (pendingDuelGo) { pendingDuelGo = false; runSequence(); }
   }
 }
 
 // ── Abstimm-Screen: alle außer den beiden Duellanten stimmen ab ──
 function showDuelVote() {
+  restoreDuelVoteScreen();
   show("scr-duel-vote");
   $("leave-btn").style.display = "";
   const pA = players.find(p => p.id === duelInfo.aId), pB = players.find(p => p.id === duelInfo.bId);
@@ -10640,24 +11136,379 @@ function finishDuelVote(tally) {
   addWin(winner === "a" ? duelInfo.aId : winner === "b" ? duelInfo.bId : null);
 }
 function showDuelResult(result) {
+  try { achOnDuelResult(result); } catch (e) { console.warn("Erfolge:", e); }
   $("btn-vote-a").disabled = true; $("btn-vote-b").disabled = true;
   const { tally, winner, aName, bName } = result;
   $("duel-result").innerHTML = winner === "tie"
     ? `<div class="raterow">🤝 ${tt("Draw!", "Unentschieden!")} ${tally.a} : ${tally.b}</div>`
     : `<div class="raterow winner" style="border-color:var(--amber);box-shadow:0 0 16px rgba(255,201,92,.3)">🏆 <b>${esc(winner === "a" ? aName : bName)}</b> ${tt("wins the duel!", "gewinnt das Duell!")} (${tally.a} : ${tally.b})</div>`;
   status("duel-vote-status", "");
-  if (isHost) $("btn-duel-back").style.display = "";
+  if (iAmLogicalHost()) $("btn-duel-back").style.display = "";
   SFX.done();
   if (winner !== "tie") burstConfetti();
 }
 $("btn-duel-back").onclick = () => {
+  if (!iAmLogicalHost()) return;
+  if (!isHost) { $("btn-duel-back").style.display = "none"; sendHost({ t: "hostCmd", cmd: "duelBack" }); return; }
+  duelBackToLobby();
+};
+function duelBackToLobby() {
   if (!isHost) return;
   duelInfo = null; duelStagedScene = null;
   Object.keys(duelSubs).forEach(k => delete duelSubs[k]);
   Object.keys(duelVotes).forEach(k => delete duelVotes[k]);
+  resetTeamRound();
   broadcast({ t: "again" });
   backToLobby();
-};
+}
+
+// ═════════════════════════════════════════════════════════════
+// TEAM-BATTLE: Team A gegen Team B — beide synchronisieren dieselbe Szene.
+// Danach laufen beide Versionen nacheinander (wie beim Duell) und jeder vergibt
+// dem ANDEREN Team 1–5 Sterne. Wer kein Team hat, bewertet beide.
+// Team-Zugehörigkeit steckt in players[].team ("a" | "b") und reist mit dem State.
+// ═════════════════════════════════════════════════════════════
+let teamInfo = null;             // { sceneId, a: [ids], b: [ids] } — ab dem Start der Runde
+const teamSubs = {};             // Host: playerId -> [{ role, items }]
+const teamVotes = {};            // Host: voterId -> { a: 1-5 | null, b: 1-5 | null }
+let teamMixBuilt = false;        // Host: beide Versionen schon verschickt
+let teamFirstSubAt = 0;          // Host: seit wann gewartet wird (Notausgang nach 45 s)
+let teamMyStars = {};            // eigene Sterne im Bewertungs-Screen
+let teamVoteSent = false;
+let teamResultShown = false;
+
+function teamOf(p) { return p && (p.team === "a" || p.team === "b") ? p.team : null; }
+function teamMembers(t) { return players.filter(p => p.team === t); }
+function teamLabel(t) { return t === "a" ? "Team A" : "Team B"; }
+function teamIcon(t) { return t === "a" ? "🟧" : "🟥"; }
+function teamNames(t, ids) {
+  const known = (teamInfo && teamInfo.names) || {};
+  const list = ids ? ids.map(id => (players.some(p => p.id === id) ? nameOf(id) : known[id]) || "?") : teamMembers(t).map(p => p.name);
+  return list.filter(Boolean).join(", ");
+}
+
+/** Host: Spieler ohne Team (z. B. neu beigetreten) ins kleinere Team stecken. */
+function ensureTeams() {
+  if (!isHost || match.mode !== "team") return false;
+  let changed = false;
+  for (const p of players) {
+    if (teamOf(p)) continue;
+    const a = teamMembers("a").length, b = teamMembers("b").length;
+    p.team = a <= b ? "a" : "b";
+    changed = true;
+  }
+  return changed;
+}
+function shuffleTeams() {
+  if (!isHost) return;
+  mischen(players.slice()).forEach((p, i) => { p.team = i % 2 ? "b" : "a"; });
+  broadcastState();
+}
+function setPlayerTeam(pid, team) {
+  if (!isHost || (team !== "a" && team !== "b")) return;
+  const p = players.find(x => x.id === pid);
+  if (!p) return;
+  p.team = team;
+  broadcastState();
+}
+
+function renderTeamSetup() {
+  const box = $("team-cols");
+  if (!box) return;
+  const host = iAmLogicalHost();
+  const col = (t) => {
+    const members = teamMembers(t);
+    const chips = members.map(p => `<button type="button" class="team-chip" data-pid="${esc(p.id)}" ${host ? "" : "disabled"} title="${esc(host ? tt("Move to the other team", "Ins andere Team schieben") : "")}">${avatarHTML(p)}<span>${esc(p.name)}${p.offline ? " 📴" : ""}</span></button>`).join("");
+    return `<div class="team-col team-${t}"><div class="team-head">${teamIcon(t)} ${teamLabel(t)} · ${members.length}</div>${chips || `<p class="tag">${tt("still empty", "noch leer")}</p>`}</div>`;
+  };
+  setHtmlIfChanged(box, col("a") + col("b"));
+  const ctl = host ? "" : "none";
+  if ($("btn-team-shuffle")) $("btn-team-shuffle").parentElement.style.display = ctl;
+  if ($("team-scene-select")) $("team-scene-select").parentElement.style.display = ctl;
+  const hint = document.querySelector('#team-setup [data-i18n="team.hint"]');
+  if (hint) hint.style.display = ctl;
+  box.querySelectorAll(".team-chip").forEach(b => b.onclick = () => {
+    if (!iAmLogicalHost()) return;
+    const p = players.find(x => x.id === b.dataset.pid);
+    if (!p) return;
+    const target = teamOf(p) === "a" ? "b" : "a";
+    SFX.click();
+    if (!isHost) { sendHost({ t: "hostCmd", cmd: "teamSet", pid: p.id, team: target }); return; }
+    setPlayerTeam(p.id, target);
+  });
+}
+function populateTeamSceneSelect() {
+  const sel = $("team-scene-select");
+  if (!sel) return;
+  const keep = sel.value;
+  const hasLines = s => (s.lines && s.lines.length) || (s.lineCount > 0);
+  const opts = sceneList.filter(s => hasLines(s) && s.id !== "testplace");
+  const daily = typeof sceneOfTheDay === "function" ? sceneOfTheDay() : null;
+  sel.innerHTML = `<option value="">🎲 ${tt("Random scene", "Zufalls-Szene")}</option>`
+    + (daily ? `<option value="${esc(daily.id)}">⭐ ${tt("Scene of the day: ", "Szene des Tages: ")}${esc(sceneTitleDisplay(daily.title))}</option>` : "")
+    + opts.map(s => `<option value="${esc(s.id)}">${esc(sceneTitleDisplay(s.title))}</option>`).join("");
+  if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+
+/**
+ * Rollen je Team verteilen. Beide Teams sprechen dieselben Rollen: höchstens
+ * 2 Rollen pro Person im kleineren Team, der Rest bleibt in BEIDEN Versionen original.
+ */
+function assignTeamRoles(sc) {
+  const a = teamMembers("a").filter(p => !p.offline), b = teamMembers("b").filter(p => !p.offline);
+  const kleiner = Math.min(a.length, b.length);
+  const roleIds = mischen(sc.roles.map(r => r.id)).slice(0, Math.max(1, Math.min(sc.roles.length, kleiner * 2)));
+  players.forEach(p => { p.role = null; p.extraRoles = []; p.ready = true; p.loadPct = 0; p.videoReady = false; p.done = 0; p.total = 0; });
+  for (const team of [a, b]) {
+    const m = mischen(team);
+    roleIds.forEach((rid, i) => {
+      const p = m[i % m.length];
+      if (p.role == null) p.role = rid;
+      else p.extraRoles.push(rid);
+    });
+  }
+}
+
+async function startTeamBattle(sceneId) {
+  if (!isHost || match.mode !== "team") return;
+  ensureTeams();
+  const a = teamMembers("a").filter(p => !p.offline), b = teamMembers("b").filter(p => !p.offline);
+  if (!a.length || !b.length) {
+    status("team-setup-status", tt("Each team needs at least one player!", "Jedes Team braucht mindestens einen Spieler!"), true);
+    SFX.err();
+    return;
+  }
+  const hasLines = s => (s.lines && s.lines.length) || (s.lineCount > 0);
+  let s = sceneId ? sceneList.find(x => x.id === sceneId) : null;
+  if (!s) {
+    const pool = sceneList.filter(x => hasLines(x) && x.id !== "testplace");
+    s = pool[Math.floor(Math.random() * pool.length)];
+  }
+  if (!s) { status("team-setup-status", tt("No scenes loaded yet — one moment …", "Noch keine Szenen geladen — einen Moment …"), true); return; }
+  status("team-setup-status", tt("⚔ Loading scene …", "⚔ Szene wird geladen …"));
+  if (!await prepareSceneSelection(s, "team-setup-status", () => isHost && match.mode === "team")) return;
+  if (!s.lines || !s.lines.length) { status("team-setup-status", tt("This scene has no lines — pick another one.", "Diese Szene hat keine Zeilen — nimm eine andere."), true); return; }
+  scene = JSON.parse(JSON.stringify(s));
+  scene.blind = false;
+  clearSceneVideoState();
+  clearSceneCaches();
+  Object.keys(teamSubs).forEach(k => delete teamSubs[k]);
+  Object.keys(teamVotes).forEach(k => delete teamVotes[k]);
+  teamMixBuilt = false; teamFirstSubAt = 0; teamResultShown = false;
+  assignTeamRoles(scene);
+  const names = {};
+  players.forEach(p => { names[p.id] = p.name; });
+  teamInfo = { sceneId: scene.id, a: teamMembers("a").map(p => p.id), b: teamMembers("b").map(p => p.id), names };
+  broadcast({ t: "scene", scene });
+  showScene(sceneVideoSrc());
+  broadcast({ t: "teamInfo", teamInfo });
+  broadcastState();
+  status("team-setup-status", "⚔ " + teamLabel("a") + " (" + teamNames("a") + ") vs " + teamLabel("b") + " (" + teamNames("b") + ")");
+  broadcast({ t: "goLines" });
+  queueOrStartBooth();
+}
+
+/** Takes nach Rolle bündeln — auch Rollen ohne Aufnahme melden (bleiben dann original). */
+function tracksByRole(items) {
+  const proRolle = new Map();
+  for (const it of items) {
+    const rid = roleOfLine(scene.lines[it.idx]);
+    if (rid == null) continue;
+    if (!proRolle.has(rid)) proRolle.set(rid, []);
+    proRolle.get(rid).push(it);
+  }
+  myRoles().forEach(r => { if (!proRolle.has(r)) proRolle.set(r, []); });
+  return [...proRolle.entries()].map(([role, list]) => ({ role, items: list }));
+}
+
+function collectTeamSubmit(pid, tracks) {
+  if (!isHost || !teamInfo || teamMixBuilt) return;
+  const p = players.find(x => x.id === pid);
+  if (!p || !teamOf(p)) return;
+  teamSubs[pid] = Array.isArray(tracks) ? tracks.filter(t => t && Array.isArray(t.items)) : [];
+  if (!teamFirstSubAt) teamFirstSubAt = Date.now();
+  maybeFinishTeam();
+}
+/** Auf wen muss noch gewartet werden? Wer lange weg ist, zählt nicht mehr. */
+function teamMissing() {
+  return players.filter(p => teamOf(p) && rolesOfPlayer(p).length && !teamSubs[p.id] && !(p.offline && !nochInSchonzeit(p)));
+}
+function maybeFinishTeam(force) {
+  if (!isHost || !teamInfo || teamMixBuilt || match.mode !== "team") return;
+  if (!force && teamMissing().length) {
+    planeOfflineNachpruefung();
+    clearTimeout(forceMixTimer);
+    forceMixTimer = setTimeout(syncForceMixBtn, 45000);
+    syncForceMixBtn();
+    return;
+  }
+  teamMixBuilt = true;
+  syncForceMixBtn();
+  const build = (t) => {
+    const out = [];
+    players.filter(p => p.team === t && teamSubs[p.id]).forEach(p => out.push(...teamSubs[p.id]));
+    return out;
+  };
+  const dataA = build("a"), dataB = build("b");
+  const info = { kind: "team", sceneId: teamInfo.sceneId, a: teamInfo.a.slice(), b: teamInfo.b.slice(), names: Object.assign({}, teamInfo.names || {}) };
+  broadcast({ t: "teamReady", dataA, dataB, info, metaA: metaMapsFromTracks(dataA), metaB: metaMapsFromTracks(dataB) });
+  loadDuelSequence(dataA, dataB, info);
+}
+
+// ── Bewertung: jeder gibt dem anderen Team Sterne ──
+function teamVoterIds() { return players.filter(p => !p.offline).map(p => p.id); }
+function teamRateable(voterTeam) { return ["a", "b"].filter(t => t !== voterTeam); }
+
+function showTeamVote() {
+  show("scr-duel-vote");
+  $("leave-btn").style.display = "";
+  const h2 = document.querySelector("#scr-duel-vote h2");
+  if (h2) h2.textContent = tt("⚔ Rate the other team!", "⚔ Bewertet das andere Team!");
+  $("btn-vote-a").parentElement.style.display = "none";
+  $("team-vote").style.display = "";
+  $("duel-result").innerHTML = "";
+  $("btn-duel-back").style.display = "none";
+  $("btn-team-vote-force").style.display = "none";
+  teamMyStars = {}; teamVoteSent = false;
+  const me = players.find(p => p.id === myId);
+  const myTeam = teamOf(me);
+  const rateable = teamRateable(myTeam);
+  const info = teamInfo || {};
+  $("duel-vote-sub").textContent = tt("Take 1 was Team A, take 2 was Team B.", "Take 1 war Team A, Take 2 war Team B.");
+  $("team-vote-rows").innerHTML = ["a", "b"].map(t => {
+    const ids = info[t] || teamMembers(t).map(p => p.id);
+    const avatars = ids.map(id => players.find(p => p.id === id)).filter(Boolean).map(avatarHTML).join("");
+    const mine = t === myTeam;
+    return `<div class="raterow team-row ${mine ? "mine" : ""}" data-team="${t}">
+      <div style="display:flex;gap:4px">${avatars}</div>
+      <div class="rateinfo">
+        <span class="ratename team-tag team-${t}">${teamIcon(t)} ${teamLabel(t)} · Take ${t === "a" ? 1 : 2}</span>
+        <span class="tag">${esc(teamNames(t, ids))}${mine ? " · " + tt("your team — no vote here", "dein Team — hier stimmst du nicht ab") : ""}</span>
+      </div>
+      ${mine ? "" : `<div class="starrow" role="group" aria-label="${esc(tt("Stars for ", "Sterne für ") + teamLabel(t))}">${[1, 2, 3, 4, 5].map(n => `<button type="button" class="starbtn" data-n="${n}" title="${n} ${n > 1 ? tt("stars", "Sterne") : tt("star", "Stern")}">★</button>`).join("")}</div>`}
+    </div>`;
+  }).join("");
+  $("team-vote-rows").querySelectorAll(".raterow").forEach(row => {
+    row.querySelectorAll(".starbtn").forEach(b => b.onclick = () => {
+      if (teamVoteSent) return;
+      const n = parseInt(b.dataset.n);
+      teamMyStars[row.dataset.team] = n;
+      row.querySelectorAll(".starbtn").forEach(x => x.classList.toggle("on", parseInt(x.dataset.n) <= n));
+      $("btn-team-vote-submit").disabled = rateable.some(t => !teamMyStars[t]);
+      SFX.click();
+    });
+  });
+  $("btn-team-vote-submit").disabled = true;
+  $("btn-team-vote-submit").style.display = "";
+  status("duel-vote-status", tt("Give the other team 1–5 stars — be fair 😄", "Gib dem anderen Team 1–5 Sterne — sei fair 😄"));
+}
+$("btn-team-vote-submit") && ($("btn-team-vote-submit").onclick = () => {
+  if (teamVoteSent) return;
+  teamVoteSent = true;
+  $("btn-team-vote-submit").disabled = true;
+  status("duel-vote-status", tt("✅ Rating in — waiting for the others …", "✅ Bewertung abgegeben — warte auf die anderen …"));
+  SFX.click();
+  const stars = { a: teamMyStars.a || null, b: teamMyStars.b || null };
+  if (isHost) collectTeamVote(myId, stars);
+  else sendHost({ t: "teamVote", stars });
+});
+$("btn-team-vote-force") && ($("btn-team-vote-force").onclick = () => {
+  if (!iAmLogicalHost()) return;
+  if (!isHost) { sendHost({ t: "hostCmd", cmd: "teamVoteForce" }); return; }
+  finishTeamVote();
+});
+function collectTeamVote(voterId, stars) {
+  if (!isHost || !teamInfo || teamResultShown) return;
+  const voter = players.find(p => p.id === voterId);
+  if (!voter) return;
+  const ok = (n) => (Number.isInteger(n) && n >= 1 && n <= 5) ? n : null;
+  const clean = { a: ok(stars && stars.a), b: ok(stars && stars.b) };
+  // Das eigene Team zählt nie — auch nicht, wenn jemand die Oberfläche austrickst
+  const vt = teamOf(voter);
+  if (vt) clean[vt] = null;
+  teamVotes[voterId] = clean;
+  maybeFinishTeamVote();
+}
+function maybeFinishTeamVote() {
+  if (!isHost || !teamInfo || teamResultShown) return;
+  const voters = teamVoterIds();
+  const done = Object.keys(teamVotes).filter(id => voters.includes(id)).length;
+  const live = { done, total: voters.length };
+  broadcast({ t: "teamVoteLive", live });
+  showTeamVoteLive(live);
+  if (voters.length && done >= voters.length) finishTeamVote();
+}
+function showTeamVoteLive(live) {
+  $("duel-vote-sub").textContent = tt("Ratings in: ", "Bewertungen: ") + live.done + "/" + live.total;
+  const force = $("btn-team-vote-force");
+  if (force) force.style.display = (iAmLogicalHost() && live.done > 0 && live.done < live.total && !teamResultShown) ? "" : "none";
+}
+function finishTeamVote() {
+  if (!isHost || !teamInfo || teamResultShown) return;
+  const avg = (t) => {
+    const v = Object.values(teamVotes).map(x => x[t]).filter(n => n != null);
+    return v.length ? v.reduce((s, n) => s + n, 0) / v.length : null;
+  };
+  const avgA = avg("a"), avgB = avg("b");
+  let winner = "tie";
+  if (avgA != null && (avgB == null || avgA > avgB + 1e-9)) winner = "a";
+  else if (avgB != null && (avgA == null || avgB > avgA + 1e-9)) winner = "b";
+  if (avgA == null && avgB == null) winner = "tie";
+  const result = { avgA, avgB, winner, a: teamInfo.a.slice(), b: teamInfo.b.slice(), namesA: teamNames("a", teamInfo.a), namesB: teamNames("b", teamInfo.b) };
+  broadcast({ t: "teamResult", result });
+  showTeamResult(result);
+}
+function showTeamResult(result) {
+  teamResultShown = true;
+  $("btn-team-vote-submit").disabled = true;
+  $("btn-team-vote-force").style.display = "none";
+  const fmt = (v) => v == null ? "–" : v.toFixed(1) + " ★";
+  const { winner } = result;
+  const line = (t) => `<div class="raterow ${winner === t ? "winner" : ""}" style="${winner === t ? "border-color:var(--amber);box-shadow:0 0 16px rgba(255,201,92,.3)" : ""}">
+      <div class="rateinfo"><span class="ratename team-tag team-${t}">${winner === t ? "🏆 " : ""}${teamIcon(t)} ${teamLabel(t)}</span><span class="tag">${esc(t === "a" ? result.namesA : result.namesB)}</span></div>
+      <span class="resultscore">${fmt(t === "a" ? result.avgA : result.avgB)}</span></div>`;
+  $("duel-result").innerHTML = (winner === "tie"
+    ? `<div class="raterow">🤝 ${tt("Draw!", "Unentschieden!")} ${fmt(result.avgA)} : ${fmt(result.avgB)}</div>`
+    : `<div class="raterow winner" style="border-color:var(--amber)">🏆 <b>${teamLabel(winner)}</b>&nbsp;${tt("wins the team battle!", "gewinnt das Team-Battle!")}</div>`)
+    + line("a") + line("b");
+  status("duel-vote-status", "");
+  $("duel-vote-sub").textContent = "";
+  if (iAmLogicalHost()) $("btn-duel-back").style.display = "";
+  SFX.done();
+  if (winner !== "tie") burstConfetti();
+  const mine = (winner === "a" ? result.a : winner === "b" ? result.b : []) || [];
+  if (typeof achOnTeamResult === "function") achOnTeamResult(mine.includes(myId));
+}
+/** Abstimm-Screen fürs Duell wieder herrichten (der Team-Modus baut ihn um). */
+function restoreDuelVoteScreen() {
+  const h2 = document.querySelector("#scr-duel-vote h2");
+  if (h2) h2.textContent = t("duelvote.h2");
+  if ($("btn-vote-a")) $("btn-vote-a").parentElement.style.display = "";
+  if ($("team-vote")) $("team-vote").style.display = "none";
+}
+function resetTeamRound() {
+  teamInfo = null; teamMixBuilt = false; teamFirstSubAt = 0; teamResultShown = false;
+  teamMyStars = {}; teamVoteSent = false;
+  Object.keys(teamSubs).forEach(k => delete teamSubs[k]);
+  Object.keys(teamVotes).forEach(k => delete teamVotes[k]);
+  restoreDuelVoteScreen();
+}
+$("btn-team-shuffle") && ($("btn-team-shuffle").onclick = () => {
+  if (!iAmLogicalHost()) return;
+  SFX.click();
+  if (!isHost) { sendHost({ t: "hostCmd", cmd: "teamShuffle" }); return; }
+  shuffleTeams();
+});
+$("btn-team-start") && ($("btn-team-start").onclick = () => {
+  if (!iAmLogicalHost()) return;
+  const sceneId = $("team-scene-select").value || null;
+  if (!isHost) {
+    sendHost({ t: "hostCmd", cmd: "teamStart", sceneId });
+    status("team-setup-status", tt("⚔ Starting the team battle …", "⚔ Team-Battle wird gestartet …"));
+    return;
+  }
+  startTeamBattle(sceneId);
+});
 
 function collectTracks(role, items, ots, fromId) {
   if (role != null) collected.set(role, items);
@@ -10733,9 +11584,10 @@ function syncForceMixBtn() {
   // Button nur beim logischen Host; collected.size kennt nur der Raum-Besitzer —
   // deshalb zusätzlich State-Hinweis über wait-screen + Host-UI.
   const fehlen = [...benoetigteRollen()].filter(r => !collected.has(r));
-  const waiting = iAmLogicalHost() && isHost && collected.size > 0 &&
-    fehlen.length > 0 &&
-    !!document.querySelector("#scr-wait.active");
+  const teamWaiting = match.mode === "team" && !!teamInfo && !teamMixBuilt && teamFirstSubAt > 0 &&
+    Date.now() - teamFirstSubAt >= 45000 && teamMissing().length > 0;
+  const waiting = iAmLogicalHost() && isHost && !!document.querySelector("#scr-wait.active") &&
+    (teamWaiting || (collected.size > 0 && fehlen.length > 0));
   btn.style.display = waiting ? "" : "none";
 }
 $("btn-force-mix") && ($("btn-force-mix").onclick = () => {
@@ -10743,7 +11595,8 @@ $("btn-force-mix") && ($("btn-force-mix").onclick = () => {
   $("btn-force-mix").style.display = "none";
   status("wait-status", tt("🎬 Starting the premiere with the tracks we have …", "🎬 Starte die Premiere mit den vorhandenen Spuren …"));
   if (!isHost) { sendHost({ t: "hostCmd", cmd: "forceMix" }); return; }
-  maybeFinishTracks(true);
+  if (match.mode === "team" && teamInfo) maybeFinishTeam(true);
+  else maybeFinishTracks(true);
 });
 function checkAllDone() { /* Fortschritt läuft über state-Broadcasts */ }
 
@@ -11307,7 +12160,9 @@ function applyPremPlayerGainsLive() {
 }
 function broadcastPremPlayerGains() {
   if (!isHost) return;
-  broadcast({ t: "premPlayerVol", gains: Object.assign(Object.create(null), premPlayerGains) });
+  // Normales Objekt schicken: PeerJS kann Objekte ohne Prototyp (Object.create(null)) nicht
+  // verpacken — die Lautstärken kamen deshalb nie bei den Gästen an.
+  broadcast({ t: "premPlayerVol", gains: Object.assign({}, premPlayerGains) });
 }
 function applyPremPlayerGainsMsg(msg) {
   if (isHost) return;
@@ -11446,7 +12301,7 @@ function broadcastPremAutoBalance() {
   broadcast({
     t: "premAutoBal",
     on: premAutoBalance,
-    gains: Object.assign(Object.create(null), premPlayerGains),
+    gains: Object.assign({}, premPlayerGains),
     vol: { master: premVol.master, voice: premVol.voice, video: premVol.video }
   });
 }
@@ -12816,6 +13671,8 @@ $("btn-back").onclick = () => {
   SFX.back(); scene = null; broadcast({ t: "again" }); resetForNewRound(); $("scene-card").style.display = "none";
 };
 function resetForNewRound() {
+  resetTeamRound();
+  nextRoundArmed = false;
   players.forEach(p => {
     p.ready = false; p.done = 0; p.total = 0; p.prem = false; p.premPct = 0;
     p.loadPct = 0; p.videoReady = false;

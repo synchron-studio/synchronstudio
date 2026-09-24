@@ -595,3 +595,71 @@ test('local packs with several dub_videos prefer the MP4 over the OGV', async t 
   await w.build(files, 'both.zip');
   assert.equal(types[0], 'video/mp4');
 });
+
+test('scene of the day is stable per day, rotates daily and never repeats back to back', t => {
+  const w = app(t, `sceneList = Array.from({ length: 40 }, (_, i) => ({ id: 's' + String(i).padStart(2, '0'), lineCount: 3, roles: [{ id: 0 }] }))
+    .concat([{ id: 'testplace', lineCount: 3, roles: [] }, { id: 'nolines', lineCount: 0, roles: [] }]);
+    window.daily = (d) => sceneOfTheDay(d).id;`);
+  const day = (n) => { const d = new Date(2026, 0, 1); d.setDate(d.getDate() + n); return d; };
+  assert.equal(w.daily(day(0)), w.daily(day(0)));
+  const picks = Array.from({ length: 90 }, (_, i) => w.daily(day(i)));
+  for (let i = 1; i < picks.length; i++) assert.notEqual(picks[i], picks[i - 1], 'no repeat on day ' + i);
+  assert.ok(new Set(picks).size > 25, 'rotates through many scenes');
+  assert.ok(!picks.includes('testplace') && !picks.includes('nolines'));
+});
+
+test('team battle: both teams dub the same roles and nobody rates their own team', t => {
+  const w = app(t, `isHost = true; myId = 'h'; match.mode = 'team';
+    players = [{ id: 'h', name: 'H', team: 'a' }, { id: 'b1', name: 'B1', team: 'b' }, { id: 'a2', name: 'A2', team: 'a' }, { id: 'b2', name: 'B2', team: 'b' }, { id: 'b3', name: 'B3', team: 'b' }];
+    window.assign = (sc) => { assignTeamRoles(sc); return players.map(p => ({ id: p.id, team: p.team, roles: rolesOfPlayer(p) })); };
+    window.vote = (id, stars) => collectTeamVote(id, stars);
+    window.votes = () => JSON.parse(JSON.stringify(teamVotes));
+    window.setInfo = () => { teamInfo = { sceneId: 'x', a: ['h', 'a2'], b: ['b1', 'b2', 'b3'], names: {} }; };
+    window.broadcast = () => {}; window.result = null;
+    window.showTeamResult = (r) => { window.result = r; };`);
+  const sc = { roles: [{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }] };
+  const out = w.assign(sc);
+  const rolesOf = (team) => out.filter(p => p.team === team).flatMap(p => p.roles).sort();
+  assert.deepEqual(rolesOf('a'), rolesOf('b'), 'same roles on both sides');
+  assert.equal(rolesOf('a').length, 4, 'smaller team (2 players) speaks at most 2 roles each');
+  assert.ok(out.filter(p => p.team === 'a').every(p => p.roles.length <= 2));
+  w.setInfo();
+  w.vote('b1', { a: 4, b: 5 });           // own team (b) must be ignored
+  assert.equal(w.votes().b1.b, null);
+  assert.equal(w.votes().b1.a, 4);
+});
+
+test('tic-tac-toe ignores moves after X has won and moves outside the board', t => {
+  const w = app(t, `isHost = true; myId = 'x'; window.broadcast = () => {};
+    window.play = (a, pid) => tttHandle(a, pid); window.state = () => JSON.parse(JSON.stringify(ttt));`);
+  w.play({ k: 'join' }, 'x'); w.play({ k: 'join' }, 'o');
+  for (const [i, p] of [[0, 'x'], [3, 'o'], [1, 'x'], [4, 'o'], [2, 'x']]) w.play({ k: 'move', i }, p);
+  assert.equal(w.state().winner, 0);
+  w.play({ k: 'move', i: 5 }, 'o');
+  w.play({ k: 'move', i: 99 }, 'o');
+  assert.equal(w.state().board.length, 9);
+  assert.equal(w.state().board[5], null);
+});
+
+test('achievements count takes, persist, and a duel win is not an arena win', t => {
+  const w = app(t, `myId = 'me'; window.showToast = () => {};
+    window.take = () => achOnTake(); window.data = () => JSON.parse(localStorage.getItem(ACH_KEY));
+    window.duel = () => { duelInfo = { aId: 'me', bId: 'x' }; achOnDuelResult({ winner: 'a' }); mgWins.me = 1; achOnWins(); };`);
+  for (let i = 0; i < 50; i++) w.take();
+  const d = w.data();
+  assert.equal(d.stats.takes, 50);
+  assert.ok(d.unlocked.first_take && d.unlocked.lines_50);
+  w.duel();
+  assert.ok(w.data().unlocked.duel_win);
+  assert.equal(w.data().unlocked.arena, undefined);
+});
+
+test('premiere volume messages can be serialized by PeerJS (plain objects)', t => {
+  const w = app(t, `isHost = true; window.sent = [];
+    conns.set('g', { open: true, send: m => window.sent.push(m) });
+    premPlayerGains = Object.create(null); premPlayerGains['1'] = 0.5;
+    broadcastPremPlayerGains();`);
+  const msg = w.sent.find(m => m.t === 'premPlayerVol');
+  assert.ok(msg);
+  assert.notEqual(Object.getPrototypeOf(msg.gains), null, 'binarypack needs a normal object');
+});

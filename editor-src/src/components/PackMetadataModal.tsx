@@ -292,6 +292,9 @@ export const PackMetadataModal: React.FC<PackMetadataModalProps> = ({
                 </button>
               ))}
             </div>
+            <p className="text-[10px] text-zinc-500 leading-snug">
+              Choicer Voicer needs <code className="text-amber-400">.ogv</code>. Chrome and Safari can’t show .ogv video any more — to play the pack as a local pack in Synchronstudio, export it as <code className="text-amber-400">.mp4</code>.
+            </p>
           </div>
 
           {/* Footer buttons */}

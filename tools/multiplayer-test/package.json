@@ -1,0 +1,15 @@
+{
+  "name": "synchronstudio-multiplayer-test",
+  "private": true,
+  "description": "Mehrspieler-Tests mit echten Browserfenstern (nicht Teil der Website)",
+  "scripts": {
+    "prepare-assets": "node prepare.cjs",
+    "test": "node scenarios.cjs"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0",
+    "jszip": "3.10.1",
+    "peer": "1.0.2",
+    "peerjs": "1.5.4"
+  }
+}

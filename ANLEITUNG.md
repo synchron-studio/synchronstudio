@@ -25,6 +25,13 @@ Fertig. Dieser Link ist ab jetzt dein Spiel — er läuft immer, kostet nichts, 
 
 **Wichtig: Kopfhörer aufsetzen!** Sonst nimmt dein Mikro den Video-Ton mit auf.
 
+### Neu in v9.24
+
+- **⚔ Team-Battle** (Spielmodus in den Match-Einstellungen): Die Spieler werden automatisch auf Team A und Team B verteilt — antippen schiebt jemanden ins andere Team, „🔀 Teams mischen“ würfelt neu. Szene wählen (oder Zufall / Szene des Tages) → „⚔ Team-Battle starten“. Beide Teams sprechen dieselbe Szene, danach laufen beide Versionen nacheinander und jeder gibt dem **anderen** Team 1–5 Sterne. Das Team mit dem besseren Schnitt gewinnt.
+- **⭐ Szene des Tages**: Jeden Tag um Mitternacht automatisch eine andere Szene, für alle gleich. Steht auf der Startseite und oben in der Szenen-Auswahl (Knopf „▶ Laden“).
+- **🏅 Erfolge**: 22 Erfolge zum Freischalten — Liste über „🏅 Erfolge“ auf der Startseite oder in der Lobby. Gespeichert im Browser auf dem jeweiligen Gerät.
+- **❓ Anleitung**: Beim ersten Besuch kommt eine kurze Erklärung in 5 Schritten (oben rechts „Überspringen“). Später jederzeit über „❓ So geht’s“ auf der Startseite.
+
 ## 🔪 Mitgelieferte Szene: Dexter — Cargo Scene
 
 Aus deinem Choicer-Voicer-Pack konvertiert:
