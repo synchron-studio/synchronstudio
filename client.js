@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.23.0";
+const APP_VERSION = "9.23.1";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -776,6 +776,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.23.1", items: [
+    "🎵 Lobby-Musik war auf der Live-Seite stumm (der Browser blockierte den Ton vom CDN) — behoben"
+  ], itemsEn: [
+    "🎵 Lobby music was silent on the live site (the browser blocked audio from the CDN) — fixed"
+  ]},
   { v: "9.23.0", items: [
     "📦 Szenen-Editor: neuer Button „Export Choicer Voicer Pack“ — dasselbe Projekt zusätzlich als Choicer-Voicer-Modpack (dub_video.ogv oder .mp4, Zeilen als .ini + .wav, Figurenbilder)",
     "🎤 Optionale „Vocals Only“-Spur im Editor: exportierte Original-Zeilen kommen dann aus den reinen Stimmen statt aus dem Videoton (ohne Musik im Hintergrund)",
@@ -3270,14 +3275,17 @@ function wvBannerAus() { const el = $("wv-banner"); if (el) el.style.display = "
 // ═════════════════════════════════════════════════════════════
 // LOBBY-MUSIK — spielt nur in Lobby & Warte-Screens, nie ingame
 // ═════════════════════════════════════════════════════════════
-// Lobby music — always via assetUrl (Pages/CDN) + resume AudioContext (otherwise silent)
+// Lobby-Musik kommt von der eigenen Seite (die MP3 wird mit ausgeliefert), NICHT vom CDN:
+// Sie läuft für die EQ-Balken durch den AudioContext — Ton von einer fremden Adresse ohne
+// CORS-Freigabe gibt der Browser dort nur als Stille aus („Lobby-Musik geht nicht“).
 const lobbyAudio = new Audio();
+lobbyAudio.crossOrigin = "anonymous";
 lobbyAudio.loop = true;
 // Nicht vorab laden: die Datei hat 3 MB und wird erst mit dem ersten Klick gebraucht
 // (vorher blockiert der Browser das Abspielen ohnehin). Spart Handy-Daten beim Öffnen.
 lobbyAudio.preload = "none";
 function ensureLobbySrc() {
-  const url = assetUrl("scenes/lobby_music.mp3");
+  const url = "scenes/lobby_music.mp3";
   if (lobbyAudio.getAttribute("data-ss-src") !== url) {
     lobbyAudio.src = url;
     lobbyAudio.setAttribute("data-ss-src", url);
