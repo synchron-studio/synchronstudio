@@ -118,6 +118,10 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
   }, [currentTime, pixelsPerSecond, isPlaying]);
   const contentWidth = duration * pixelsPerSecond;
   const totalWidth = hasVideo ? Math.max(1, contentWidth) : 800;
+  // Browser erlauben Leinwände nur bis ~32 000 px Breite. Bei langen Videos oder starkem
+  // Zoom wurde die Wellenform deshalb komplett leer. Die Leinwand bleibt begrenzt und
+  // wird per CSS auf die volle Timeline-Breite gestreckt.
+  const waveformCanvasWidth = Math.max(1, Math.min(Math.round(totalWidth), 16000));
 
   // Helper to compute snapped timestamps for clips with high precision and details
   const getSnappedTimeDetails = (
@@ -217,8 +221,10 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
     const height = canvas.height;
+    const width = totalWidth;
+    // In Timeline-Koordinaten zeichnen, horizontal auf die (begrenzte) Leinwand skalieren
+    ctx.setTransform(canvas.width / Math.max(1, totalWidth), 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
     ctx.fillStyle = '#18181b'; // zinc-900 background
@@ -268,7 +274,7 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
         ctx.fillRect(x, (height - h) / 2, 3, h);
       }
     }
-  }, [duration, pixelsPerSecond, waveformPeaks, totalWidth]);
+  }, [duration, pixelsPerSecond, waveformPeaks, totalWidth, waveformCanvasWidth]);
 
   // Handle timeline clicking to seek playhead
   useEffect(() => {
@@ -715,8 +721,6 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
       <div
         ref={timelineRef}
         onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         className={`relative overflow-auto bg-[#0a0a0b] flex-1 min-h-0 border-b border-zinc-800/80 custom-scrollbar ${
           !hasVideo ? 'opacity-30 pointer-events-none select-none cursor-not-allowed' : 'cursor-crosshair'
         }`}
@@ -748,7 +752,7 @@ export const TimelineEditor: React.FC<TimelineEditorProps> = ({
           <div className="relative h-14 border-b border-zinc-800/80 bg-zinc-900/30">
             <canvas
               ref={waveformCanvasRef}
-              width={totalWidth}
+              width={waveformCanvasWidth}
               height={56}
               className="w-full h-full block"
             />

@@ -41,8 +41,8 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
       const file = e.dataTransfer.files[0];
       if (isVideo) {
         const ext = file.name.split('.').pop() || 'mp4';
-        if (ext.toLowerCase() !== 'mp4') {
-          alert('Only .mp4 format is supported.');
+        if (!['mp4', 'm4v', 'mov', 'webm'].includes(ext.toLowerCase())) {
+          alert('Please use an .mp4, .mov or .webm video.');
           return;
         }
         const renamedFile = new File([file], `dub_video.${ext}`, { type: file.type });
@@ -102,14 +102,15 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
             <input
               ref={videoInputRef}
               type="file"
-              accept=".mp4"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; /* dieselbe Datei erneut wählbar */ }}
+              accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.[0]) {
                   const file = e.target.files[0];
                   const ext = file.name.split('.').pop() || 'mp4';
-                  if (ext.toLowerCase() !== 'mp4') {
-                    alert('Only .mp4 format is supported.');
+                  if (!['mp4', 'm4v', 'mov', 'webm'].includes(ext.toLowerCase())) {
+                    alert('Please use an .mp4, .mov or .webm video.');
                     return;
                   }
                   const renamedFile = new File([file], `dub_video.${ext}`, { type: file.type });
@@ -164,6 +165,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
             <input
               ref={audioInputRef}
               type="file"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; /* dieselbe Datei erneut wählbar */ }}
               accept=".wav,.mp3,.ogg,audio/wav,audio/mpeg,audio/ogg"
               className="hidden"
               onChange={(e) => {
@@ -236,6 +238,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
           <input
             ref={iconInputRef}
             type="file"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; /* dieselbe Datei erneut wählbar */ }}
             accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={(e) => {
@@ -282,6 +285,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
           <input
             ref={fillerInputRef}
             type="file"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; /* dieselbe Datei erneut wählbar */ }}
             accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={(e) => {

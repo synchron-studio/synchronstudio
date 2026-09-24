@@ -31,3 +31,8 @@ test('all indexed scenes have metadata, valid timings and existing asset paths',
   walk(read('scenes.json'));
   assert.deepEqual([...missing], [], 'missing scene assets');
 });
+
+test('scenes-index.json and scenedata/ are in sync with scenes.json', () => {
+  // Wer eine Szene nur in scenes.json einträgt, sieht sie im Spiel nicht — das fängt dieser Test ab.
+  execFileSync(process.execPath, [path.join(root, 'tools', 'sync-scene-index.cjs'), '--check'], { cwd: root, stdio: 'pipe' });
+});

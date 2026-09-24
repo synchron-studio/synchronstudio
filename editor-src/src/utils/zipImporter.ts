@@ -2,6 +2,32 @@ import JSZip from 'jszip';
 import { Character, MediaSource, PackInfo, TimelineClip } from '../types';
 import { parsePackInfoIni, parseClipIni } from './ini';
 import { createAvatarSvgDataUrl } from './sampleData';
+import { decodeAudioFile } from './audio';
+
+const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
+const AUDIO_TYPES: Record<string, string> = { wav: 'audio/wav', mp3: 'audio/mpeg', ogg: 'audio/ogg', m4a: 'audio/mp4', opus: 'audio/ogg' };
+const VIDEO_TYPES: Record<string, string> = { mp4: 'video/mp4', m4v: 'video/mp4', ogv: 'video/ogg', webm: 'video/webm', mov: 'video/quicktime' };
+
+function extOf(name: string): string {
+  return (name.split('.').pop() || '').toLowerCase();
+}
+function baseNameOf(path: string): string {
+  return path.split('/').pop() || path;
+}
+/** Echte Länge eines Tonclips — vorher bekam jeder importierte Clip pauschal 2 Sekunden. */
+async function audioDuration(blob: Blob): Promise<number> {
+  try {
+    const buf = await decodeAudioFile(blob);
+    return buf.duration;
+  } catch {
+    return 0;
+  }
+}
+async function fileFromZip(entry: JSZip.JSZipObject, typeMap: Record<string, string>, fallbackType: string): Promise<File> {
+  const blob = await entry.async('blob');
+  const name = baseNameOf(entry.name);
+  return new File([blob], name, { type: typeMap[extOf(name)] || fallbackType });
+}
 
 export interface DraftState {
   packInfo: PackInfo;
@@ -139,8 +165,14 @@ export async function importDraftZip(file: File): Promise<DraftState> {
 
   const draftFile = zip.file('_draft_project.json');
 
+  // Ohne Projektdatei: Szenen-Export (scene.json) oder Choicer-Voicer-Pack lesen.
+  // Vorher brach der Import hier ab — der Pack-Leser weiter unten war nie erreichbar.
   if (!draftFile) {
-    throw new Error('The uploaded zip file is not compatible (missing _draft_project.json).');
+    const sceneFile = zip.file('scene.json');
+    if (sceneFile) return await parseSceneJsonZip(zip, JSON.parse(await sceneFile.async('string')));
+    const hasClipMeta = Object.keys(zip.files).some((k) => /\.(ini|txt)$/i.test(k) && !baseNameOf(k).startsWith('_'));
+    if (hasClipMeta) return await parseStandardModpackZip(zip, file.name);
+    throw new Error('This ZIP is not a Synchronstudio export or Choicer Voicer pack (no _draft_project.json, scene.json or clip .ini files).');
   }
 
   const draftText = await draftFile.async('string');
@@ -188,14 +220,12 @@ export async function importDraftZip(file: File): Promise<DraftState> {
 
     if (!charZipFile) {
       const keyName = cleanCharKey(char.name);
+      // Nur den Dateinamen vergleichen, nicht den Ordner — Szenen-Exporte legen die
+      // Bilder unter scenes/<id>/ ab, und dort wurden sie vorher nie gefunden.
       const matchingKey = Object.keys(zip.files).find((k) => {
-        if (zip.files[k].dir) return false;
-        const kLower = k.toLowerCase();
-        const cleanK = cleanCharKey(kLower);
-        return (
-          (cleanK.startsWith(keyName) || keyName.startsWith(cleanK)) &&
-          (kLower.endsWith('.png') || kLower.endsWith('.jpg') || kLower.endsWith('.jpeg') || kLower.endsWith('.webp'))
-        );
+        if (zip.files[k].dir || !IMAGE_RE.test(k)) return false;
+        const cleanK = cleanCharKey(baseNameOf(k).replace(IMAGE_RE, '').replace(/_avatar$/i, ''));
+        return !!cleanK && (cleanK === keyName || cleanK.startsWith(keyName) || keyName.startsWith(cleanK));
       });
       if (matchingKey) charZipFile = zip.file(matchingKey);
     }
@@ -287,11 +317,19 @@ export async function importDraftZip(file: File): Promise<DraftState> {
 
     // 5. Re-hydrate Clips (Audio & Custom Images)
     if (draftState.clips) {
+      const sceneId = draftState.packInfo?.sceneId || '';
+      const ordered = [...draftState.clips].sort((a, b) => a.startTime - b.startTime);
       for (const clip of draftState.clips) {
         const baseName = clip.filename || clip.id;
-        const wavFile = zip.file(`${baseName}.wav`) || zip.file(`${clip.id}.wav`);
-        if (wavFile) {
-          clip.audioBlob = await wavFile.async('blob');
+        const n = String(ordered.indexOf(clip) + 1).padStart(2, '0');
+        // Modpack-Format (<name>.wav) oder Szenen-Export (scenes/<id>/lines/NN.mp3, alt: <id>/lines/NN.mp3)
+        const audioFile = zip.file(`${baseName}.wav`) || zip.file(`${clip.id}.wav`) ||
+          (sceneId ? (zip.file(`scenes/${sceneId}/lines/${n}.mp3`) || zip.file(`scenes/${sceneId}/lines/${n}.wav`) ||
+            zip.file(`${sceneId}/lines/${n}.mp3`) || zip.file(`${sceneId}/lines/${n}.wav`)) : null);
+        if (audioFile) {
+          clip.audioBlob = await fileFromZip(audioFile, AUDIO_TYPES, 'audio/wav');
+          clip.audioStart = clip.startTime;
+          clip.audioEnd = clip.endTime;
         }
 
         if (clip.imageFilename) {
@@ -304,48 +342,117 @@ export async function importDraftZip(file: File): Promise<DraftState> {
       }
     }
 
-    // 6. Re-hydrate Video File
-    const videoZipFile =
-      zip.file('dub_video.ogv') ||
-      zip.file('dub_video.mp4') ||
-      Object.values(zip.files).find((f) => !f.dir && (f.name.endsWith('.mp4') || f.name.endsWith('.ogv') || f.name.endsWith('.webm') || f.name.endsWith('.mov')));
-
+    // 6. Re-hydrate Video File (Vorschau-Clips unter previews/ sind NICHT das Szenenvideo)
+    const videoZipFile = findVideo(zip);
     if (videoZipFile) {
-      const vBlob = await videoZipFile.async('blob');
-      const ext = videoZipFile.name.split('.').pop() || 'mp4';
-      const mimeType = ext === 'ogv' ? 'video/ogg' : 'video/mp4';
-      const vFile = new File([vBlob], videoZipFile.name, { type: mimeType });
+      const vFile = await fileFromZip(videoZipFile, VIDEO_TYPES, 'video/mp4');
       draftState.videoMedia = {
         type: 'video',
         file: vFile,
         name: vFile.name,
-        url: URL.createObjectURL(vBlob),
+        url: URL.createObjectURL(vFile),
         duration: 20,
       };
     }
 
     // 7. Re-hydrate Backing Track
-    const backingZipFile =
-      zip.file('_backing_track.wav') ||
-      zip.file('_backing_track.mp3') ||
-      Object.values(zip.files).find((f) => !f.dir && f.name.startsWith('_backing_track'));
-
+    const backingZipFile = findBacking(zip);
     if (backingZipFile) {
-      const bBlob = await backingZipFile.async('blob');
-      const bFile = new File([bBlob], backingZipFile.name, { type: 'audio/wav' });
+      const bFile = await fileFromZip(backingZipFile, AUDIO_TYPES, 'audio/wav');
       draftState.backingTrackMedia = {
         type: 'audio',
         file: bFile,
         name: bFile.name,
-        url: URL.createObjectURL(bBlob),
+        url: URL.createObjectURL(bFile),
         duration: 20,
       };
     }
 
     return draftState;
+}
 
-  // Fallback: Parse standard modpack zip without _draft_project.json
-  return await parseStandardModpackZip(zip, file.name);
+function findVideo(zip: JSZip): JSZip.JSZipObject | null {
+  const files = Object.values(zip.files).filter((f) => !f.dir && /\.(mp4|m4v|ogv|webm|mov)$/i.test(f.name));
+  return zip.file('dub_video.mp4') || zip.file('dub_video.ogv') ||
+    files.find((f) => /^scenes\/[^/]+\.mp4$/i.test(f.name)) ||
+    files.find((f) => /_SOURCE\./i.test(f.name)) ||
+    files.find((f) => !f.name.startsWith('previews/')) || null;
+}
+
+function findBacking(zip: JSZip): JSZip.JSZipObject | null {
+  return zip.file('_backing_track.wav') || zip.file('_backing_track.mp3') ||
+    Object.values(zip.files).find((f) => !f.dir && /(^|\/)(_backing_track|[^/]*_backing_track)\.[a-z0-9]+$/i.test(f.name)) || null;
+}
+
+/** Szenen-Export ohne Projektdatei (nur scene.json + Dateien) wieder öffnen. */
+async function parseSceneJsonZip(zip: JSZip, scene: any): Promise<DraftState> {
+  const roles: Array<{ id: number; name: string }> = Array.isArray(scene?.roles) ? scene.roles : [];
+  const lines: any[] = Array.isArray(scene?.lines) ? scene.lines : [];
+  const title = String(scene?.title || 'Imported Scene').replace(/\s*\(\d+\s*(Rollen|Rolle|roles|role)\)\s*$/i, '');
+  const packInfo: PackInfo = {
+    title,
+    sceneId: scene?.id || undefined,
+    iconFilename: '_icon.png',
+    authors: ['Synchronstudio'],
+    readme: 'Synchronstudio scene',
+    preselectedDubCharacters: roles.map((r) => r.name),
+  };
+
+  const characters: Character[] = [];
+  for (let i = 0; i < roles.length; i++) {
+    const r = roles[i];
+    const color = PRESET_COLORS[i % PRESET_COLORS.length];
+    const avatarPath = scene?.avatars?.[String(r.id)];
+    const entry = avatarPath ? zip.file(avatarPath) || zip.file(String(avatarPath).replace(/^scenes\//, '')) : null;
+    const avatarUrl = entry ? URL.createObjectURL(await entry.async('blob')) : createAvatarSvgDataUrl(r.name, color);
+    characters.push({
+      id: `char_${i + 1}_${cleanCharKey(r.name)}`,
+      name: r.name,
+      avatarFilename: `${cleanCharKey(r.name) || 'role' + i}_avatar.png`,
+      avatarUrl,
+      color,
+    });
+  }
+  const nameOfRole = (id: number) => roles.find((r) => r.id === id)?.name || roles[0]?.name || 'Voice';
+
+  const clips: TimelineClip[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const t = Number(l.t) || 0;
+    const end = Math.max(t + 0.2, Number(l.end) || t + 2);
+    const who = Array.isArray(l.chars) && l.chars.length ? nameOfRole(l.chars[0]) : (l.who || nameOfRole(0));
+    const audioEntry = l.orig ? zip.file(l.orig) || zip.file(String(l.orig).replace(/^scenes\//, '')) : null;
+    const clip: TimelineClip = {
+      id: `clip_${i + 1}_${Date.now()}`,
+      filename: `${String(i + 1).padStart(2, '0')}_${cleanCharKey(who) || 'clip'}`,
+      startTime: Number(t.toFixed(3)),
+      endTime: Number(end.toFixed(3)),
+      dubTimestamps: [Number(t.toFixed(3))],
+      dubCharacters: [who],
+      caption: String(l.text || ''),
+      captionDe: l.de && l.de !== l.text ? String(l.de) : undefined,
+      volume: 1,
+    };
+    if (audioEntry) {
+      clip.audioBlob = await fileFromZip(audioEntry, AUDIO_TYPES, 'audio/mpeg');
+      clip.audioStart = clip.startTime;
+      clip.audioEnd = clip.endTime;
+    }
+    clips.push(clip);
+  }
+
+  const state: DraftState = { packInfo, characters, clips };
+  const video = findVideo(zip);
+  if (video) {
+    const vFile = await fileFromZip(video, VIDEO_TYPES, 'video/mp4');
+    state.videoMedia = { type: 'video', file: vFile, name: vFile.name, url: URL.createObjectURL(vFile), duration: 20 };
+  }
+  const backing = findBacking(zip);
+  if (backing) {
+    const bFile = await fileFromZip(backing, AUDIO_TYPES, 'audio/mpeg');
+    state.backingTrackMedia = { type: 'audio', file: bFile, name: bFile.name, url: URL.createObjectURL(bFile), duration: 20 };
+  }
+  return state;
 }
 
 async function parseStandardModpackZip(zip: JSZip, fileTitle: string): Promise<DraftState> {
@@ -381,9 +488,10 @@ async function parseStandardModpackZip(zip: JSZip, fileTitle: string): Promise<D
     packInfo.fillerImageUrl = URL.createObjectURL(blob);
   }
 
-  // 2. Read Clip INI files
+  // 2. Read Clip INI files (manche Packs nutzen .txt statt .ini — oder mischen beides)
   const iniFiles = Object.keys(zip.files).filter(
-    (k) => !zip.files[k].dir && k.endsWith('.ini') && k !== '_pack_info.ini'
+    (k) => !zip.files[k].dir && /\.(ini|txt)$/i.test(k) && !baseNameOf(k).startsWith('_') &&
+      !/(^|\/)__MACOSX\//.test(k) && !/readme/i.test(baseNameOf(k))
   );
   iniFiles.sort();
 
@@ -392,20 +500,23 @@ async function parseStandardModpackZip(zip: JSZip, fileTitle: string): Promise<D
 
   for (let i = 0; i < iniFiles.length; i++) {
     const iniFileName = iniFiles[i];
-    const baseName = iniFileName.replace(/\.ini$/i, '');
+    const baseName = iniFileName.replace(/\.(ini|txt)$/i, '');
     const iniFile = zip.file(iniFileName);
     if (!iniFile) continue;
 
     const text = await iniFile.async('string');
     const parsedClip = parseClipIni(text);
+    if (!parsedClip.dubCharacters?.length && !parsedClip.caption) continue;   // keine Clip-Datei
 
     // Look for matching audio file
-    const wavFile = zip.file(`${baseName}.wav`) || zip.file(`${baseName}.mp3`);
+    const wavFile = ['wav', 'mp3', 'ogg', 'm4a', 'opus'].map((e) => zip.file(`${baseName}.${e}`)).find(Boolean) || null;
     let audioBlob: Blob | undefined = undefined;
     let clipDuration = 2.0;
 
     if (wavFile) {
-      audioBlob = await wavFile.async('blob');
+      audioBlob = await fileFromZip(wavFile, AUDIO_TYPES, 'audio/wav');
+      const d = await audioDuration(audioBlob);
+      if (d > 0.1) clipDuration = d;
     }
 
     const timestamp = parsedClip.dubTimestamps?.[0] ?? currentTimeTracker;
@@ -435,6 +546,8 @@ async function parseStandardModpackZip(zip: JSZip, fileTitle: string): Promise<D
       imageFilename: parsedClip.imageFilename,
       imageUrl,
       audioBlob,
+      audioStart: audioBlob ? Number(startTime.toFixed(3)) : undefined,
+      audioEnd: audioBlob ? Number(endTime.toFixed(3)) : undefined,
       volume: 1,
     });
   }
@@ -539,40 +652,28 @@ async function parseStandardModpackZip(zip: JSZip, fileTitle: string): Promise<D
 
   // 5. Video Media
   let videoMedia: MediaSource | undefined = undefined;
-  const videoZipFile =
-    zip.file('dub_video.ogv') ||
-    zip.file('dub_video.mp4') ||
-    Object.values(zip.files).find((f) => !f.dir && (f.name.endsWith('.mp4') || f.name.endsWith('.ogv') || f.name.endsWith('.webm')));
-
+  const videoZipFile = findVideo(zip);
   if (videoZipFile) {
-    const vBlob = await videoZipFile.async('blob');
-    const ext = videoZipFile.name.split('.').pop() || 'mp4';
-    const mimeType = ext === 'ogv' ? 'video/ogg' : 'video/mp4';
-    const vFile = new File([vBlob], videoZipFile.name, { type: mimeType });
+    const vFile = await fileFromZip(videoZipFile, VIDEO_TYPES, 'video/mp4');
     videoMedia = {
       type: 'video',
       file: vFile,
       name: vFile.name,
-      url: URL.createObjectURL(vBlob),
+      url: URL.createObjectURL(vFile),
       duration: Math.max(20, Math.ceil(currentTimeTracker)),
     };
   }
 
   // 6. Backing Track
   let backingTrackMedia: MediaSource | undefined = undefined;
-  const backingZipFile =
-    zip.file('_backing_track.wav') ||
-    zip.file('_backing_track.mp3') ||
-    Object.values(zip.files).find((f) => !f.dir && f.name.startsWith('_backing_track'));
-
+  const backingZipFile = findBacking(zip);
   if (backingZipFile) {
-    const bBlob = await backingZipFile.async('blob');
-    const bFile = new File([bBlob], backingZipFile.name, { type: 'audio/wav' });
+    const bFile = await fileFromZip(backingZipFile, AUDIO_TYPES, 'audio/wav');
     backingTrackMedia = {
       type: 'audio',
       file: bFile,
       name: bFile.name,
-      url: URL.createObjectURL(bBlob),
+      url: URL.createObjectURL(bFile),
       duration: 20,
     };
   }

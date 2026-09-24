@@ -22,6 +22,8 @@ export interface TimelineClip {
   originalImageFilename?: string;
   imageUrl?: string; // Custom clip image blob URL if provided
   audioBlob?: Blob; // Sliced WAV/MP3 blob
+  audioStart?: number; // Zeitfenster, zu dem audioBlob gehört (beim Import gesetzt)
+  audioEnd?: number;
   originalAudioFilename?: string;
   volume?: number;
   isMuted?: boolean;

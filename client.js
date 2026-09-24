@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.21.0";
+const APP_VERSION = "9.22.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -776,6 +776,25 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.22.0", items: [
+    "🛠 Szenen-Editor: Export brach nach dem Neuladen der Seite ab (gespeicherte Bilddateien waren kaputt) — behoben, Projekte lassen sich jederzeit wieder exportieren",
+    "🎬 Export schnitt das Video ab, wenn der Backing-Track kürzer war — jetzt bleibt immer die volle Videolänge; „Abbrechen“ stoppt das Video-Encoding wirklich",
+    "⬇ Download des fertigen ZIPs startete in Firefox/Safari manchmal gar nicht — behoben",
+    "📦 Export-ZIP hat jetzt die Ordner des Spiels (Video, Bilder, Original-Zeilen, Vorschau-Clip) und eine Schritt-für-Schritt-Anleitung; Charakterbilder sind echte PNGs",
+    "📂 Import: Choicer-Voicer-Packs und fertige Szenen-Exporte lassen sich wieder öffnen (vorher „nicht kompatibel“)",
+    "💾 „Weiterbearbeiten“ nach dem Neuladen öffnete ein leeres Projekt und überschrieb das gespeicherte — behoben; Speichern läuft verzögert, Timeline ruckelt beim Ziehen nicht mehr",
+    "〰 Wellenform verschwand bei langen Videos oder starkem Zoom — behoben; Auto-Split erkennt Sprechpausen deutlich zuverlässiger",
+    "📦 Lokale Packs im Spiel lesen jetzt auch .ini-Zeilendateien und <name>_avatar-Bilder; Anführungszeichen in Untertiteln bleiben erhalten"
+  ], itemsEn: [
+    "🛠 Scene editor: export failed after reloading the page (saved image files were broken) — fixed, projects can always be exported again",
+    "🎬 Export cut the video short when the backing track was shorter — the full video length is now kept; “Cancel” really stops video encoding",
+    "⬇ Downloading the finished ZIP sometimes didn't start in Firefox/Safari — fixed",
+    "📦 Export ZIP now mirrors the game folders (video, pictures, original lines, preview clip) with step-by-step instructions; character pictures are real PNGs",
+    "📂 Import: Choicer Voicer packs and finished scene exports can be opened again (previously “not compatible”)",
+    "💾 “Continue editing” after a reload opened an empty project and overwrote the saved one — fixed; saving is debounced, dragging on the timeline no longer stutters",
+    "〰 Waveform disappeared on long videos or strong zoom — fixed; auto-split detects speech pauses much more reliably",
+    "📦 Local packs in the game now also read .ini line files and <name>_avatar pictures; quotation marks in captions are kept"
+  ]},
   { v: "9.21.0", items: [
     "⚡ Schneller auf dem Handy: Filmkorn-Ebene 16× kleiner, Pegelanzeigen und Spielerliste zeichnen nur noch neu, wenn sich wirklich etwas ändert",
     "📶 Weniger Datenverbrauch: Profilbilder (11 MB) laden erst beim Hinscrollen, Lobby-Musik (3 MB) erst beim ersten Abspielen, das Verbindungsmodul bremst den Seitenaufbau nicht mehr",
@@ -6859,7 +6878,11 @@ const packText = (bytes) => new TextDecoder("utf-8").decode(bytes);
 function saeubereBildunterschrift(roh) {
   let t = String(roh || "").trim();
   t = t.replace(/^\[[^\]]{1,40}\]\s*/, "");        // führendes [Name]
-  t = t.replace(/^[“”"'«»\s]+|[“”"'«»\s]+$/g, "");  // Anführungszeichen außen
+  // Anführungszeichen außen nur entfernen, wenn sie den GANZEN Text umschließen —
+  // sonst wurde aus 'Say "hi"' ein kaputtes 'Say "hi'
+  const Q = "“”\"'«»„";
+  while (t.length >= 2 && Q.includes(t[0]) && Q.includes(t[t.length - 1]) &&
+         ![...t.slice(1, -1)].some(ch => Q.includes(ch) && ch !== "'")) t = t.slice(1, -1).trim();
   return t.trim();
 }
 /** Winziger INI-Leser für das Choicer-Voicer-Format (key="wert" / key=[1.5] / key=["a","b"]). */
@@ -6874,7 +6897,7 @@ function parseIniish(txt) {
       o[m[1]] = v.slice(1, -1).split(",").map(s => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
       return;
     }
-    o[m[1]] = v.replace(/^"|"$/g, "");
+    o[m[1]] = v.replace(/^"|"$/g, "").replace(/\\"/g, '"');   // \" aus dem Editor-Export
   });
   return o;
 }
@@ -6913,10 +6936,12 @@ async function buildSceneFromPack(files, packName) {
   const zeilen = [];
   const AUDIO_EXT = ["mp3", "wav", "ogg", "m4a", "opus"];
   kurz.forEach((bytes, n) => {
-    if (!n.endsWith(".txt") || n.startsWith("_")) return;
+    // Metadaten stehen je nach Pack in .txt ODER .ini (der Szenen-Editor schreibt .ini) —
+    // vorher wurden nur .txt gelesen und Editor-Packs meldeten „keine brauchbaren Zeilen“.
+    if (!/\.(txt|ini)$/.test(n) || n.startsWith("_") || /readme/.test(n)) return;
     const meta = parseIniish(packText(bytes));
     if (!meta.caption && !meta.dub_characters) return;
-    const basis = n.replace(/\.txt$/, "");
+    const basis = n.replace(/\.(txt|ini)$/, "");
     let audio = null;
     for (const e of AUDIO_EXT) { if (kurz.has(basis + "." + e)) { audio = kurz.get(basis + "." + e); break; } }
     const ts = Array.isArray(meta.dub_timestamps) ? parseFloat(meta.dub_timestamps[0]) : NaN;
@@ -6963,6 +6988,16 @@ async function buildSceneFromPack(files, packName) {
   // ── Avatare: pro Rolle das erste Bild, das dazu auftaucht ──
   const avatars = {};
   zeilen.forEach(z => { const id = idFuer(z.who); if (z.bild && !avatars[id]) avatars[id] = blobFor(z.bild, "image/png"); });
+  // Sonst <name>_avatar.png/.jpg/.webp (so legt der Szenen-Editor die Charakterbilder ab)
+  rollenNamen.forEach((name, i) => {
+    const id = i + 1;
+    if (avatars[id]) return;
+    const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    for (const ext of ["png", "jpg", "jpeg", "webp"]) {
+      const bytes = kurz.get(key + "_avatar." + ext);
+      if (bytes) { avatars[id] = blobFor(bytes, ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg"); break; }
+    }
+  });
 
   // ── Endzeiten: bis zur nächsten Zeile; die letzte über ihre Tonlänge ──
   // Achtung: Packs können mehrere Zeilen auf DENSELBEN Zeitstempel legen (zwei

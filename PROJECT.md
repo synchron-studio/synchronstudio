@@ -20,7 +20,8 @@ Privates Online-Synchronisations-Spiel für Freunde. Freunde treten einem Raum b
 - `client.js` — gesamte Spiellogik
 - `editor.html` — Redirect zum Szenen-Editor; Studio-Lock mit `?studio=1`
 - `editor/` — gebauter Timeline-Szenen-Editor (Export = Synchronstudio-ZIP)
-- `editor-src/` — Editor-Quellcode (`npm run build`)
+- `editor-src/` — Editor-Quellcode (`npm ci && npm run build` in `editor-src/`, schreibt nach `editor/`)
+- `tools/sync-scene-index.cjs` — baut `scenes-index.json` + `scenedata/` aus `scenes.json` (`--check` prüft nur)
 - `editor.legacy.html` — alter Vanilla-Editor (Backup)
 - `scenes.json` — Liste aller spielbaren Szenen mit Rollen/Timing/Text
 - `scenes/` — Videos, Avatare, Voicelines pro Szene
@@ -66,9 +67,10 @@ Elias schickt ein RAR/ZIP im "Mod-Pack"-Format (Choicer-Voicer-Style): Video + `
 4. Voicelines: jede einzeln zu Mono-MP3 64kbit, durchnummeriert `01.mp3, 02.mp3, ...` in `scenes/<id>/lines/`
 5. Deutsche Übersetzung selbst schreiben — nicht wörtlich, sondern natürlich/idiomatisch
 6. `scenes.json`-Eintrag bauen: `id`, `title`, `videoUrl`, `avatars`, `roles` (mit `pan`/`effect`/`gain`), `lines` (`t`, `end`, `chars`, `who`, `text`, `de`, `orig`)
-7. Vollständigkeit prüfen (jede referenzierte Datei existiert) BEVOR ausgeliefert wird
-8. Neue Charaktere zur `AVATAR_CHARS`-Liste in `client.js` hinzufügen
-9. Patch Notes + `APP_VERSION` hochzählen
+7. `node tools/sync-scene-index.cjs` ausführen — erzeugt `scenes-index.json` + `scenedata/<id>.json` aus `scenes.json`. Das Spiel lädt NUR den Index; ohne diesen Schritt fehlt die Szene im Spiel (ein Test prüft das). Vorschau-Clip `previews/<id>.mp4` (≤ 6 s, < 500 KB) wird vom Test verlangt.
+8. Vollständigkeit prüfen (jede referenzierte Datei existiert) BEVOR ausgeliefert wird
+9. Neue Charaktere zur `AVATAR_CHARS`-Liste in `client.js` hinzufügen
+10. Patch Notes + `APP_VERSION` hochzählen
 
 ## Bekannte Fallstricke
 

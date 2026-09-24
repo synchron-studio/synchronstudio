@@ -18,10 +18,44 @@ export function getAudioContext(): AudioContext {
 /**
  * Decode audio or video File/Blob into AudioBuffer
  */
-export async function decodeAudioFile(file: File | Blob): Promise<AudioBuffer> {
-  const ctx = getAudioContext();
+export async function decodeAudioFile(file: File | Blob, opts?: { sampleRate?: number }): Promise<AudioBuffer> {
   const arrayBuffer = await file.arrayBuffer();
-  return await ctx.decodeAudioData(arrayBuffer);
+  // Lange Videos mit niedrigerer Abtastrate dekodieren: 24 Minuten Stereo bei 48 kHz
+  // belegen sonst über 500 MB Arbeitsspeicher und der Tab stürzt ab. Für Wellenform
+  // und Original-Zeilen (werden ohnehin als 64-kbit-Mono-MP3 exportiert) reicht das.
+  if (opts?.sampleRate) {
+    const Offline = window.OfflineAudioContext ||
+      (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+    if (Offline) {
+      try {
+        const offline = new Offline(1, 1, opts.sampleRate);
+        return await offline.decodeAudioData(arrayBuffer.slice(0));
+      } catch (err) {
+        console.warn('Reduced-rate decode failed, using default rate:', err);
+      }
+    }
+  }
+  return await getAudioContext().decodeAudioData(arrayBuffer);
+}
+
+/** Dauer einer Video-/Audiodatei über die Metadaten — ohne alles zu dekodieren. */
+export function probeMediaDuration(url: string, kind: 'video' | 'audio' = 'video'): Promise<number> {
+  return new Promise((resolve) => {
+    const el = document.createElement(kind);
+    let done = false;
+    const finish = (d: number) => {
+      if (done) return;
+      done = true;
+      el.removeAttribute('src');
+      try { el.load(); } catch { /* egal */ }
+      resolve(Number.isFinite(d) && d > 0 ? d : 0);
+    };
+    el.preload = 'metadata';
+    el.onloadedmetadata = () => finish(el.duration);
+    el.onerror = () => finish(0);
+    setTimeout(() => finish(0), 10000);
+    el.src = url;
+  });
 }
 
 /**

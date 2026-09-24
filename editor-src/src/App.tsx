@@ -15,12 +15,13 @@ import {
   SAMPLE_PACK_INFO,
 } from './utils/sampleData';
 import {
-  createSyntheticDemoAudioBuffer,
   decodeAudioFile,
   extractWaveformPeaks,
   playAudioSegment,
+  probeMediaDuration,
   sliceAudioBuffer,
 } from './utils/audio';
+import { downloadBlob } from './utils/media';
 import { getSmartFilenameForCharacter, reindexClipsByCharacter } from './utils/ini';
 import { captureFrameAtTime, ZipExportProgress } from './utils/zipExporter';
 import { exportSynchronstudioZip, slugifySceneId } from './utils/ssExport';
@@ -104,13 +105,20 @@ export default function App() {
   const [isBackingTrackOnly, setIsBackingTrackOnly] = useState(false);
 
   const [projectId, setProjectId] = useState<string>(`project_${Date.now()}`);
+  // Wurde in dieser Sitzung schon ein Projekt geöffnet/angelegt? Vorher zeigte
+  // „Continue Editing Work“ nach dem Neuladen den LEEREN Startzustand — und das
+  // automatische Speichern überschrieb damit das gespeicherte Projekt.
+  const [sessionProjectLoaded, setSessionProjectLoaded] = useState(false);
   const [hasActiveProject, setHasActiveProject] = useState<boolean>(() => {
     return Boolean(getActiveProjectFromStorage());
   });
 
-  // Auto-save project state locally whenever project details change
-  useEffect(() => {
-    if (view === 'home') return;
+  // Auto-save project state locally whenever project details change.
+  // Verzögert: beim Ziehen eines Clips ändert sich das Projekt bei jeder Mausbewegung —
+  // jedes Mal alles in den localStorage zu schreiben ließ die Timeline ruckeln.
+  const latestSaveRef = useRef<() => void>(() => {});
+  latestSaveRef.current = () => {
+    if (view === 'home' || !sessionProjectLoaded) return;
     saveActiveProjectLocally(
       projectId,
       packInfo,
@@ -119,10 +127,22 @@ export default function App() {
       videoMedia?.name,
       backingTrackMedia?.name,
       videoMedia?.url,
-      backingTrackMedia?.url
+      backingTrackMedia?.url,
+      duration
     );
+  };
+  useEffect(() => {
+    if (view === 'home' || !sessionProjectLoaded) return;
     setHasActiveProject(true);
-  }, [projectId, packInfo, characters, clips, videoMedia, backingTrackMedia, view]);
+    const timer = setTimeout(() => latestSaveRef.current(), 600);
+    return () => clearTimeout(timer);
+  }, [projectId, packInfo, characters, clips, videoMedia, backingTrackMedia, view, duration, sessionProjectLoaded]);
+  // Beim Schließen/Neuladen den letzten Stand nicht verlieren
+  useEffect(() => {
+    const flush = () => latestSaveRef.current();
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, []);
 
   const handleDeleteProject = (deletedId: string) => {
     deleteSavedProject(deletedId);
@@ -148,10 +168,11 @@ export default function App() {
   };
 
   const handleSelectRecentProject = async (project: SavedProject) => {
-    if (project.id === projectId) {
+    if (project.id === projectId && sessionProjectLoaded) {
       setView('editor');
       return;
     }
+    setSessionProjectLoaded(true);
 
     setProjectId(project.id);
     setPackInfo(project.packInfo);
@@ -215,8 +236,8 @@ export default function App() {
       const vFile = persistedVideo instanceof File 
         ? persistedVideo 
         : new File([persistedVideo], project.videoMediaName || 'dub_video.mp4', { type: persistedVideo.type || 'video/mp4' });
-      // Re-trigger the processing to restore perfectly
-      handleUploadVideo(vFile);
+      // Re-trigger the processing to restore perfectly (unter der ID DIESES Projekts speichern)
+      handleUploadVideo(vFile, project.id);
     } else if (project.videoMediaUrl || project.videoMediaName) {
       setVideoMedia({
         name: project.videoMediaName || 'dub_video.mp4',
@@ -231,7 +252,7 @@ export default function App() {
       const bFile = persistedBackingTrack instanceof File 
         ? persistedBackingTrack 
         : new File([persistedBackingTrack], project.backingTrackName || '_backing_track.wav', { type: persistedBackingTrack.type || 'audio/wav' });
-      handleUploadBackingTrack(bFile);
+      handleUploadBackingTrack(bFile, project.id);
     } else if (project.backingTrackUrl || project.backingTrackName) {
       setBackingTrackMedia({
         name: project.backingTrackName || '_backing_track.wav',
@@ -417,19 +438,29 @@ export default function App() {
   const selectedClip = clips.find((c) => c.id === selectedClipId);
 
   // Upload Video File Handler
-  const handleUploadVideo = async (file: File) => {
+  // targetProjectId: beim Öffnen/Importieren eines Projekts ist `projectId` hier noch der
+  // ALTE Wert (State-Update kommt erst später an) — das Video landete dadurch im
+  // Speicher des vorherigen Projekts und überschrieb dort dessen Video.
+  const handleUploadVideo = async (file: File, targetProjectId: string = projectId) => {
     setIsLoading(true);
     setLoadingMessage('Processing and decoding video file...');
     try {
-      const ext = file.name.split('.').pop() || 'mp4';
-      const renamedFile = new File([file], `dub_video.${ext}`, { type: file.type });
+      const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
+      const type = file.type || (ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+      const renamedFile = new File([file], `dub_video.${ext}`, { type });
       const dataUrl = URL.createObjectURL(renamedFile);
-      
+      if (videoMedia?.url?.startsWith('blob:') && videoMedia.url !== dataUrl) {
+        const oldUrl = videoMedia.url;
+        setTimeout(() => URL.revokeObjectURL(oldUrl), 5000);
+      }
+
       // Save media to IndexedDB for offline persistence across sessions
-      saveMediaFileToStorage(projectId, 'video', renamedFile);
+      saveMediaFileToStorage(targetProjectId, 'video', renamedFile);
 
       try {
-        const audioBuffer = await decodeAudioFile(renamedFile);
+        // Lange Videos (> 8 min) mit 22 kHz dekodieren, sonst droht ein Absturz aus Speichermangel
+        const probed = await probeMediaDuration(dataUrl, 'video');
+        const audioBuffer = await decodeAudioFile(renamedFile, probed > 480 ? { sampleRate: 22050 } : undefined);
         const peaks = extractWaveformPeaks(audioBuffer, 1200);
         const fileDuration = audioBuffer.duration;
 
@@ -461,6 +492,8 @@ export default function App() {
             resolve();
           };
           videoEl.onerror = () => {
+            // Browser kann das Video nicht lesen (z. B. H.265 oder fehlende Codecs). Vorher blieb
+            // die Timeline dann stillschweigend 0 s lang und nichts funktionierte.
             setVideoMedia({
               type: 'video',
               file: renamedFile,
@@ -468,6 +501,8 @@ export default function App() {
               name: renamedFile.name,
               duration: 20,
             });
+            setDuration(20);
+            showAlert('This browser cannot read this video (codec not supported). Try Chrome or Edge, or convert it to a standard H.264 MP4 first.', 'Video format');
             resolve();
           };
         });
@@ -480,17 +515,18 @@ export default function App() {
   };
 
   // Upload Backing Track Handler
-  const handleUploadBackingTrack = async (file: File) => {
+  const handleUploadBackingTrack = async (file: File, targetProjectId: string = projectId) => {
     setIsLoading(true);
     setLoadingMessage('Processing and decoding backing track...');
     try {
       const dataUrl = URL.createObjectURL(file);
-      
+
       // Save media to IndexedDB for offline persistence across sessions
-      saveMediaFileToStorage(projectId, 'backingTrack', file);
-      
+      saveMediaFileToStorage(targetProjectId, 'backingTrack', file);
+
       try {
-        const audioBuffer = await decodeAudioFile(file);
+        const probed = await probeMediaDuration(dataUrl, 'audio');
+        const audioBuffer = await decodeAudioFile(file, probed > 480 ? { sampleRate: 22050 } : undefined);
         const fileDuration = audioBuffer.duration;
 
         setBackingTrackMedia({
@@ -993,51 +1029,67 @@ export default function App() {
     const videoData = videoBuffer.getChannelData(0);
     const backingData = backingBuffer ? backingBuffer.getChannelData(0) : null;
     const sampleRate = videoBuffer.sampleRate;
-    const minSilenceDuration = 0.4;
+    const minSpeechDuration = 0.4;
+    // Lautstärke (RMS) über ~46-ms-Fenster statt eines einzelnen Messwerts: einzelne Samples
+    // sind zufällig und zerhackten Sätze mitten im Wort. Dazu 0,25 s Nachlauf, damit kurze
+    // Atempausen keine neue Zeile beginnen.
+    const win = 2048;
+    const hangover = 0.25;
+    const rmsAt = (data: Float32Array, from: number) => {
+      let sum = 0, n = 0;
+      for (let j = from; j < from + win && j < data.length; j++) { sum += data[j] * data[j]; n++; }
+      return n ? Math.sqrt(sum / n) : 0;
+    };
 
     const newClips: TimelineClip[] = [];
     let isSpeaking = false;
     let speakStart = 0;
+    let lastLoud = 0;
     let clipCounter = clips.length + 1;
+    const threshold = backingData ? 0.04 : 0.03;
 
-    for (let i = 0; i < videoData.length; i += 2048) {
-      const vSample = Math.abs(videoData[i]);
-      const bSample = backingData && i < backingData.length ? Math.abs(backingData[i]) : 0;
+    const closeSegment = (endSec: number) => {
+      if (endSec - speakStart < minSpeechDuration) return;
+      // Nichts über bereits vorhandene Clips legen
+      if (clips.some((c) => c.startTime < endSec && c.endTime > speakStart)) return;
+      const charName = characters.length > 0 ? characters[(clipCounter - 1) % characters.length]?.name : 'Voice';
+      const currentAllClips = [...clips, ...newClips];
+      const autoFilename = getSmartFilenameForCharacter(charName, currentAllClips);
+      const cleanChar = charName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      newClips.push({
+        id: `clip_auto_${clipCounter}_${Date.now()}`,
+        filename: autoFilename,
+        startTime: Number(speakStart.toFixed(3)),
+        endTime: Number(endSec.toFixed(3)),
+        dubTimestamps: [Number(speakStart.toFixed(3))],
+        dubCharacters: [charName],
+        caption: `“Auto-detected voice segment #${clipCounter}”`,
+        imageFilename: `${cleanChar}.png`,
+        volume: 1,
+      });
+      clipCounter++;
+    };
+
+    for (let i = 0; i < videoData.length; i += win) {
       const timeSec = i / sampleRate;
-      
-      // Calculate diff if backing track exists, otherwise just use video amplitude threshold
-      const diffAmplitude = backingData ? Math.max(0, vSample - bSample * 1.5) : vSample;
-      const threshold = backingData ? 0.08 : 0.05;
+      const v = rmsAt(videoData, i);
+      const bIdx = backingData ? Math.floor(timeSec * backingBuffer!.sampleRate) : 0;
+      const bv = backingData && bIdx < backingData.length ? rmsAt(backingData, bIdx) : 0;
+      // Mit Backing-Track: nur was über der Musik liegt, zählt als Stimme
+      const level = backingData ? Math.max(0, v - bv * 1.2) : v;
 
-      if (diffAmplitude > threshold && !isSpeaking) {
-        isSpeaking = true;
-        speakStart = timeSec;
-      } else if (diffAmplitude <= threshold && isSpeaking) {
-        const speechDuration = timeSec - speakStart;
-        if (speechDuration >= minSilenceDuration) {
-          const charName = characters.length > 0 ? characters[(clipCounter - 1) % characters.length]?.name : 'Voice';
-          const currentAllClips = [...clips, ...newClips];
-          const autoFilename = getSmartFilenameForCharacter(charName, currentAllClips);
-          const cleanChar = charName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-          newClips.push({
-            id: `clip_auto_${clipCounter}_${Date.now()}`,
-            filename: autoFilename,
-            startTime: Number(speakStart.toFixed(3)),
-            endTime: Number(timeSec.toFixed(3)),
-            dubTimestamps: [Number((speakStart + 0.1).toFixed(3))],
-            dubCharacters: [charName],
-            caption: `“Auto-detected voice segment #${clipCounter}”`,
-            imageFilename: `${cleanChar}.png`,
-            volume: 1,
-          });
-          clipCounter++;
-        }
+      if (level > threshold) {
+        if (!isSpeaking) { isSpeaking = true; speakStart = Math.max(0, timeSec - 0.05); }
+        lastLoud = timeSec;
+      } else if (isSpeaking && timeSec - lastLoud > hangover) {
+        closeSegment(Math.min(videoBuffer.duration, lastLoud + 0.15));
         isSpeaking = false;
       }
     }
+    if (isSpeaking) closeSegment(Math.min(videoBuffer.duration, lastLoud + 0.15));
 
     if (newClips.length > 0) {
-      setClips((prev) => [...prev, ...newClips]);
+      setClips((prev) => reindexClipsByCharacter([...prev, ...newClips], characters));
       setSelectedClipId(newClips[0].id);
       showAlert(`Auto-detected ${newClips.length} new voice clips!`, 'Auto-Split Success');
     } else {
@@ -1081,6 +1133,7 @@ export default function App() {
   // Blank Project Reset
   const handleResetBlank = (confirm = true) => {
     const executeReset = () => {
+      setSessionProjectLoaded(true);
       setProjectId(`project_${Date.now()}`);
       setPackInfo({
         title: 'New Scene',
@@ -1119,14 +1172,16 @@ export default function App() {
     setLoadingMessage('Importing project draft...');
     try {
       const draft = await importDraftZip(file);
-      setProjectId(`project_${Date.now()}`);
+      const newProjectId = `project_${Date.now()}`;
+      setSessionProjectLoaded(true);
+      setProjectId(newProjectId);
       setPackInfo(draft.packInfo);
       setCharacters(draft.characters);
       setClips(draft.clips);
       
       // Load video if exists
       if (draft.videoMedia?.file) {
-        handleUploadVideo(draft.videoMedia.file);
+        handleUploadVideo(draft.videoMedia.file, newProjectId);
       } else if (draft.videoMedia) {
         setVideoMedia(draft.videoMedia);
         setDuration(draft.videoMedia.duration || 0);
@@ -1137,7 +1192,7 @@ export default function App() {
 
       // Load backing track if exists
       if (draft.backingTrackMedia?.file) {
-        handleUploadBackingTrack(draft.backingTrackMedia.file);
+        handleUploadBackingTrack(draft.backingTrackMedia.file, newProjectId);
       } else if (draft.backingTrackMedia) {
         setBackingTrackMedia(draft.backingTrackMedia);
       } else {
@@ -1177,7 +1232,7 @@ export default function App() {
     exportAbortControllerRef.current = controller;
 
     try {
-      const { archive: zippedBlob, videoFailed } = await exportSynchronstudioZip(
+      const { archive: zippedBlob, videoFailed, oversize, missingAudioLines } = await exportSynchronstudioZip(
         packInfo,
         characters,
         clips,
@@ -1191,21 +1246,17 @@ export default function App() {
       const cleanTitle = slugifySceneId(packInfo.sceneId || packInfo.title || 'scene');
       const downloadFilename = `${cleanTitle}_synchronstudio.zip`;
 
-      const downloadUrl = URL.createObjectURL(zippedBlob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = downloadFilename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
+      // Adresse nicht sofort freigeben — sonst startet der Download in Firefox/Safari nicht
+      downloadBlob(zippedBlob, downloadFilename);
 
-      if (videoFailed) {
+      const notes: string[] = [];
+      if (videoFailed) notes.push('The video could not be encoded in the browser. The ZIP contains the source video and backing track in _source/ — merge them with ffmpeg before adding the scene to the game.');
+      if (oversize) notes.push('The scene video is larger than ~20 MB (CDN limit). See README.txt in the ZIP.');
+      if (missingAudioLines) notes.push(`${missingAudioLines} line(s) have no original audio (no video audio could be decoded for them).`);
+      if (notes.length) {
         showAlert(
-          <div>
-            Video could not be fully muxed in the browser. The ZIP still has your source video / backing track — merge them with ffmpeg or ask for help before adding to the game.
-          </div>,
-          'Video note'
+          <div className="space-y-2">{notes.map((n, i) => <p key={i}>{n}</p>)}</div>,
+          'Export notes'
         );
       }
     } catch (err: any) {
@@ -1247,7 +1298,14 @@ export default function App() {
       <Header
         packInfo={packInfo}
         view={view}
-        onGoHome={() => setView(view === 'home' ? 'editor' : 'home')}
+        onGoHome={() => {
+          if (view !== 'home') { latestSaveRef.current(); setView('home'); return; }
+          if (sessionProjectLoaded) { setView('editor'); return; }
+          // Noch nichts geöffnet: das gespeicherte Projekt laden statt eines leeren
+          const stored = getActiveProjectFromStorage();
+          if (stored) handleSelectRecentProject(stored);
+          else handleResetBlank(false);
+        }}
         onUpdatePackInfo={(info) => setPackInfo((prev) => ({ ...prev, ...info }))}
         onOpenMetadata={() => setIsMetadataOpen(true)}
         onOpenGuidelines={() => setIsGuidelinesOpen(true)}
@@ -1263,16 +1321,21 @@ export default function App() {
         <div className="flex-1 overflow-y-auto">
           <HomePage
             currentActiveProject={
-              hasActiveProject
-                ? {
-                    id: projectId,
-                    title: packInfo.title,
-                    updatedAt: Date.now(),
-                    packInfo,
-                    characters,
-                    clips,
-                  }
-                : null
+              !hasActiveProject
+                ? null
+                : sessionProjectLoaded
+                  ? {
+                      id: projectId,
+                      title: packInfo.title,
+                      updatedAt: Date.now(),
+                      packInfo,
+                      characters,
+                      clips,
+                      duration,
+                      videoMediaName: videoMedia?.name,
+                      backingTrackName: backingTrackMedia?.name,
+                    }
+                  : getActiveProjectFromStorage()
             }
             onOpenProject={handleSelectRecentProject}
             onCreateNewProject={handleCreateNewProject}
@@ -1356,6 +1419,7 @@ export default function App() {
                 onCaptionOffsetChange={(offset, align) => {
                   setPackInfo(prev => ({ ...prev, captionOffset: offset, captionAlign: align }));
                 }}
+                onEnded={() => setIsPlaying(false)}
               />
             </div>
 

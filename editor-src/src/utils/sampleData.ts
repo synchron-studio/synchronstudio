@@ -4,9 +4,24 @@ import { Character, PackInfo, TimelineClip } from '../types';
  * Generate SVG Data URL for character avatar placeholder
  */
 export function createAvatarSvgDataUrl(name: string, bgColor = '#3b82f6', textColor = '#ffffff'): string {
-  const seed = encodeURIComponent(name || 'Unknown');
-  const bg = bgColor.replace('#', '');
-  return `https://api.dicebear.com/10.x/glyphs/svg?seed=${seed}&backgroundColor=${bg}`;
+  // Lokal erzeugt statt über api.dicebear.com: funktioniert offline, hängt an keinem
+  // fremden Dienst und lässt sich beim Export zuverlässig in PNG umrechnen.
+  const clean = String(name || '?').trim();
+  const parts = clean.split(/[\s_-]+/).filter(Boolean);
+  const letters = (parts.length >= 2 ? parts[0][0] + parts[1][0] : clean.slice(0, 2)).toUpperCase() || '?';
+  const safe = (v: string) => v.replace(/[<>&"']/g, '');
+  const bg = /^#[0-9a-f]{3,8}$/i.test(bgColor) ? bgColor : '#3b82f6';
+  const fg = /^#[0-9a-f]{3,8}$/i.test(textColor) ? textColor : '#ffffff';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" data-ss-placeholder="1">` +
+    `<rect width="256" height="256" rx="48" fill="${bg}"/>` +
+    `<text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial,Helvetica,sans-serif" font-size="104" font-weight="700" fill="${fg}">${safe(letters)}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** Automatisch erzeugter Platzhalter (alt: dicebear, neu: lokales SVG)? */
+export function isPlaceholderAvatar(url?: string): boolean {
+  if (!url) return true;
+  return url.includes('dicebear') || (url.startsWith('data:image/svg+xml') && url.includes('data-ss-placeholder'));
 }
 
 export const SAMPLE_PACK_INFO: PackInfo = {

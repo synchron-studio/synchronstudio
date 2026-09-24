@@ -79,13 +79,15 @@ Aus deinem Choicer-Voicer-Pack konvertiert:
 
 Öffne den **Szenen-Editor**: `https://DEINNAME.github.io/synchronstudio/editor.html`
 
-**Workflow:**
-1. **Clip vorbereiten** (in AE/Premiere): Szene schneiden (15–60 s), Tonspur durch Vocal Remover (vocalremover.org / UVR5), Stimmen raus, Musik+SFX auf ca. -8 dB, Export MP4 (H.264+AAC), unter 25 MB
-2. **Editor:** MP4 laden → Rollen anlegen (Name/Pan/Effekt) → Video abspielen und mit den Tasten **S** (Line startet) und **E** (Line endet) die Dialoge timen — Leertaste = Play/Pause, 🐢-Button für 0,5× beim Feintuning
-3. Pro Line: Original-Text, deutsche Übersetzung und Rolle eintragen
-4. **JSON erzeugen** → kopieren
-5. **Repo:** MP4 nach `scenes/` hochladen, `scenes.json` im Browser editieren (Stift-Symbol) und den Block als neuen Listeneintrag einfügen (Komma zwischen Einträgen!), Commit, 3–4 Min warten, Strg+Shift+R
-6. **Optional — Original-Stimmen** (für 🗣-Anhören + unbesetzte Rollen): Die einzelnen Sprach-Schnipsel als MP3 nach `scenes/DEINE_ID/lines/01.mp3` … hochladen und pro Line `"orig": "scenes/DEINE_ID/lines/01.mp3"` ergänzen. Die Schnipsel schneidest du einfach aus der Original-Tonspur (die MIT Stimmen) — in Audacity oder AE pro Line exportieren.
+**Workflow (Timeline-Editor, Link: `editor.html?studio=1`):**
+1. **Clip vorbereiten:** Szene schneiden, Stimmen per Vocal Remover (vocalremover.org / UVR5) aus der Tonspur holen → das ist der **Backing-Track** (Musik + SFX ohne Stimmen). Das Video selbst behält die Original-Tonspur MIT Stimmen — daraus schneidet der Editor die Original-Zeilen.
+2. **Editor:** „Create New Project“ → Video (MP4, MOV oder WebM) und Backing-Track laden → Figuren anlegen („Add Character“, Bild optional).
+3. Zeilen setzen: „Add Clip“ an der Abspielposition oder „Auto-Split“ (erkennt Sprechpausen automatisch). Clips auf der Timeline ziehen/kürzen, rechts Text (Englisch + Deutsch) und Figur eintragen.
+4. **„Export Scene (.zip)“** → das ZIP enthält fertig: Video mit Backing-Track, Charakterbilder, Original-Zeilen als MP3, eine 6-Sekunden-Vorschau und `scene.json`.
+5. **Ins Repo:** ZIP im Repo-Ordner entpacken, den Inhalt von `scene.json` in `scenes.json` einfügen (Komma zwischen Einträgen!), dann `node tools/sync-scene-index.cjs` ausführen — **ohne diesen Schritt taucht die Szene im Spiel nicht auf** (das Spiel liest `scenes-index.json` + `scenedata/`). Die `README.txt` im ZIP erklärt alles nochmal Schritt für Schritt.
+6. Ist das Video größer als ~20 MB, steht ein Hinweis in der `README.txt` (CDN-Grenze → Eintrag in `OVERSIZE_MP4` in `client.js`).
+
+Tipp: Der Editor speichert das Projekt automatisch im Browser. Über „Export Draft“ bzw. das Export-ZIP lässt es sich auch später wieder öffnen („Import ZIP“ auf der Startseite — auch fertige Choicer-Voicer-Packs).
 
 **Faustregeln für gutes Lip-Timing:** Start lieber 0,1 s zu früh als zu spät · Ende = wo die nächste Line beginnt · Grunzer/Geräusche als eigene Lines anlegen · Test im Spiel machen und Zeiten im JSON nachjustieren.
 

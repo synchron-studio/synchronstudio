@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Users, Plus, Trash2, Tag, Upload, Check, Pencil, X, UserPlus } from 'lucide-react';
 import { Character } from '../types';
-import { createAvatarSvgDataUrl } from '../utils/sampleData';
+import { createAvatarSvgDataUrl, isPlaceholderAvatar } from '../utils/sampleData';
+import { fileToSmallDataUrl } from '../utils/media';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 interface CharacterManagerProps {
@@ -80,12 +81,11 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
         setIsLoading(false);
       }
       setAvatarFilename(file.name);
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setAvatarDataUrl(ev.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      // Verkleinert speichern: Originalfotos mit mehreren MB füllten sonst den Projektspeicher
+      try { setAvatarDataUrl(await fileToSmallDataUrl(file, 512)); }
+      catch { setAvatarDataUrl(null); }
     }
+    e.target.value = '';   // dieselbe Datei erneut wählbar
   };
 
   const handleEditAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,12 +98,10 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
         setIsLoading(false);
       }
       setEditAvatarFilename(file.name);
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setEditAvatarDataUrl(ev.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      try { setEditAvatarDataUrl(await fileToSmallDataUrl(file, 512)); }
+      catch { setEditAvatarDataUrl(null); }
     }
+    e.target.value = '';
   };
 
   const startEditing = (char: Character) => {
@@ -124,7 +122,7 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
     const ext = editAvatarFilename ? (editAvatarFilename.split('.').pop() || 'png') : (char.avatarFilename?.split('.').pop() || 'png');
     const formattedFilename = `${safeName}_avatar.${ext}`;
 
-    const isDicebear = editAvatarDataUrl?.startsWith('https://api.dicebear.com/');
+    const isDicebear = isPlaceholderAvatar(editAvatarDataUrl || undefined);
     const avatar = editAutoScreenshot ? createAvatarSvgDataUrl(editName.trim(), editColor) : (editAvatarDataUrl && !isDicebear ? editAvatarDataUrl : createAvatarSvgDataUrl(editName.trim(), editColor));
 
     const updatedChar: Character = {

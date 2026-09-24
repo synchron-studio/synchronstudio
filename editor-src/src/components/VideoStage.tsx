@@ -20,6 +20,7 @@ interface VideoStageProps {
   captionOffset?: { x: number; y: number };
   captionAlign?: 'left' | 'center' | 'right';
   onCaptionOffsetChange?: (offset: { x: number; y: number }, align?: 'left' | 'center' | 'right') => void;
+  onEnded?: () => void;
 }
 
 export const VideoStage: React.FC<VideoStageProps> = ({
@@ -39,6 +40,7 @@ export const VideoStage: React.FC<VideoStageProps> = ({
   captionOffset,
   captionAlign,
   onCaptionOffsetChange,
+  onEnded,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const backingAudioRef = useRef<HTMLAudioElement>(null);
@@ -234,7 +236,8 @@ export const VideoStage: React.FC<VideoStageProps> = ({
     const updateTime = () => {
       if (videoRef.current) {
         const cur = videoRef.current.currentTime;
-        if (Math.abs(cur - lastUpdateTimeRef.current) >= 0.01) {
+        // ~30 Updates/s reichen für einen flüssigen Abspielkopf; jedes Update zeichnet die ganze App neu
+        if (Math.abs(cur - lastUpdateTimeRef.current) >= 0.033) {
           lastUpdateTimeRef.current = cur;
           onSeek(cur);
         }
@@ -350,7 +353,10 @@ export const VideoStage: React.FC<VideoStageProps> = ({
             playsInline
             className="absolute inset-0 w-full h-full object-contain"
             onEnded={() => {
+              // Am Ende auch den Wiedergabe-Zustand beenden — sonst zeigte der Knopf „Pause“,
+              // obwohl nichts mehr lief, und der erste Klick danach tat scheinbar nichts.
               if (!isScrubbing) onSeek(duration);
+              onEnded?.();
             }}
           />
         ) : (

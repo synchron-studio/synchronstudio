@@ -558,3 +558,24 @@ test('rapid duplicate clicks play a single click sound', t => {
   w.click(); w.click();
   assert.equal(w.samples, 1);
 });
+
+test('local packs accept .ini clip metadata and <name>_avatar images from the scene editor', async t => {
+  const w = app(t, `window.build = buildSceneFromPack;`);
+  w.TextDecoder = TextDecoder;
+  const enc = s => new TextEncoder().encode(s);
+  const files = new Map([
+    ['dub_video.mp4', new Uint8Array([1, 2, 3])],
+    ['_pack_info.ini', enc('[data]\ntitle="Editor Pack"\n')],
+    ['01_hero.ini', enc('[data]\n\ncaption="Say \\"hi\\""\nimage="default.png"\ndub_timestamps=[1.500]\ndub_characters=["Hero"]\n')],
+    ['01_hero.wav', new Uint8Array([9, 9])],
+    ['01_villain.txt', enc('caption="Nope"\ndub_timestamps=[3.0]\ndub_characters=["Villain"]\n')],
+    ['hero_avatar.png', new Uint8Array([7])],
+  ]);
+  const built = await w.build(files, 'editor.zip');
+  assert.equal(built.scene.lines.length, 2);
+  assert.equal(built.scene.lines[0].text, 'Say "hi"');
+  assert.equal(built.scene.lines[0].who, 'Hero');
+  assert.ok(built.scene.lines[0].orig, 'clip audio attached');
+  assert.ok(built.scene.avatars[1], 'avatar from hero_avatar.png');
+  assert.equal(built.scene.title.startsWith('📦 Editor Pack'), true);
+});
