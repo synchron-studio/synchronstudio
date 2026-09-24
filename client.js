@@ -695,7 +695,7 @@ const SFX = (() => {
   }
   // Viele Knöpfe spielen selbst einen Klick UND der globale Klick-Lauscher auch —
   // ohne Sperre klang jeder zweite Klick doppelt (und erzeugte zwei Audio-Objekte).
-  let lastClickT = 0;
+  let lastClickT = -Infinity;
   return {
     click: () => {
       const now = performance.now();
