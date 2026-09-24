@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenMetadata: () => void;
   onOpenGuidelines: () => void;
   onExportZip: () => void;
+  onExportChoicerPack?: () => void;
   onExportDraft: () => void;
   onImportDraft: (file: File) => void;
   onReset: () => void;
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMetadata,
   onOpenGuidelines,
   onExportZip,
+  onExportChoicerPack,
   onExportDraft,
   onImportDraft,
   onReset,
@@ -188,6 +190,33 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'Package and transcode assets into a standard .zip modpack.'}
               </TooltipContent>
             </Tooltip>
+
+            {onExportChoicerPack && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-block">
+                    <button
+                      type="button"
+                      onClick={onExportChoicerPack}
+                      disabled={isExporting || !hasVideo}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        isExporting || !hasVideo
+                          ? 'border-zinc-800 text-zinc-600 cursor-not-allowed'
+                          : 'border-amber-600/60 text-amber-300 hover:bg-amber-600/10 cursor-pointer'
+                      }`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export Choicer Voicer Pack</span>
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {!hasVideo
+                    ? 'Please upload a video file first to enable export.'
+                    : 'Extra: export as a Choicer Voicer modpack (dub_video, line .ini/.wav, avatars). Video format: Pack Settings.'}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </>
       )}

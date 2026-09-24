@@ -14,7 +14,7 @@
 import JSZip from 'jszip';
 import type { FFmpeg } from '@ffmpeg/ffmpeg';
 import { Character, MediaSource, PackInfo, TimelineClip } from '../types';
-import { audioBufferToWavBlob, sliceAudioBuffer } from './audio';
+import { clipAudioFor } from './lineAudio';
 import { ZipExportProgress } from './zipExporter';
 import { cleanupFiles, clampProgress, terminateFFmpeg, tryGetFFmpeg } from './ffmpeg';
 import { asBlob, fetchBlob, toPngBlob } from './media';
@@ -187,7 +187,7 @@ async function toMonoMp3(ffmpeg: FFmpeg, source: Blob, abortSignal?: AbortSignal
 }
 
 /** Charakterbild wählen: hochgeladenes Bild → aufgenommenes Standbild → Platzhalter. */
-async function avatarSourceFor(char: Character, clips: TimelineClip[]): Promise<Blob | null> {
+export async function avatarSourceFor(char: Character, clips: TimelineClip[]): Promise<Blob | null> {
   const uploaded = asBlob(char.avatarFile) || (!isPlaceholderAvatar(char.avatarUrl) ? await fetchBlob(char.avatarUrl) : null);
   if (uploaded) return uploaded;
   // Auto-Screenshot-Figuren: das erste aufgenommene Standbild der Figur ist ein echtes Bild
@@ -197,19 +197,6 @@ async function avatarSourceFor(char: Character, clips: TimelineClip[]): Promise<
     if (b) return b;
   }
   return fetchBlob(char.avatarUrl);
-}
-
-/** Tonquelle einer Zeile. Ein importierter Clip-Ton (oft saubere Einzelstimme) passt nur,
- *  solange die Zeile nicht verschoben wurde — sonst wird aus dem Video neu geschnitten. */
-function clipAudioFor(clip: TimelineClip, from: number, to: number, videoMedia?: MediaSource): Blob | null {
-  const own = asBlob(clip.audioBlob);
-  const unmoved = clip.audioStart == null || clip.audioEnd == null ||
-    (Math.abs(clip.audioStart - clip.startTime) < 0.002 && Math.abs(clip.audioEnd - clip.endTime) < 0.002);
-  if (own && unmoved) return own;
-  if (videoMedia?.audioBuffer) {
-    try { return audioBufferToWavBlob(sliceAudioBuffer(videoMedia.audioBuffer, from, to)); } catch { /* weiter */ }
-  }
-  return own;
 }
 
 export interface SynchronstudioExportResult {
@@ -226,7 +213,8 @@ export async function exportSynchronstudioZip(
   videoMedia?: MediaSource,
   backingTrackMedia?: MediaSource,
   onProgress?: (progress: ZipExportProgress) => void,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  vocalsMedia?: MediaSource
 ): Promise<SynchronstudioExportResult> {
   const check = () => {
     if (abortSignal?.aborted) throw new ExportCancelled();
@@ -293,7 +281,7 @@ export async function exportSynchronstudioZip(
     const de = (clip.captionDe || text).replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim();
 
     // Das Spiel spielt das Original ab `t` — also auch ab dort schneiden, sonst ist es versetzt
-    const source = clipAudioFor(clip, t, end, videoMedia);
+    const source = clipAudioFor(clip, t, end, { vocals: vocalsMedia, video: videoMedia });
     let orig: string | undefined;
     if (source) {
       const mp3 = ffmpeg ? await toMonoMp3(ffmpeg, source, abortSignal) : null;

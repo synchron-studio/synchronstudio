@@ -579,3 +579,19 @@ test('local packs accept .ini clip metadata and <name>_avatar images from the sc
   assert.ok(built.scene.avatars[1], 'avatar from hero_avatar.png');
   assert.equal(built.scene.title.startsWith('📦 Editor Pack'), true);
 });
+
+test('local packs with several dub_videos prefer the MP4 over the OGV', async t => {
+  const w = app(t, `window.build = buildSceneFromPack;`);
+  w.TextDecoder = TextDecoder;
+  const types = [];
+  const orig = w.URL.createObjectURL;
+  w.URL.createObjectURL = (b) => { types.push(b.type); return orig ? orig.call(w.URL, b) : 'blob:x' + types.length; };
+  const enc = s => new TextEncoder().encode(s);
+  const files = new Map([
+    ['dub_video.mp4', new Uint8Array([2])],
+    ['dub_video.ogv', new Uint8Array([1])],
+    ['01_hero.ini', enc('[data]\ncaption="Hi"\ndub_timestamps=[1.0]\ndub_characters=["Hero"]\n')],
+  ]);
+  await w.build(files, 'both.zip');
+  assert.equal(types[0], 'video/mp4');
+});

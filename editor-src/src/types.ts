@@ -48,6 +48,7 @@ export interface PackInfo {
   excludeDraftJson?: boolean; // Option to exclude _draft_project.json from ZIP export
   excludeVideo?: boolean; // Option to exclude video from ZIP export
   exportChoicerPack?: boolean; // Also include Choicer Voicer files (default false)
+  cvVideoFormat?: 'ogv' | 'mp4'; // Choicer Voicer export: dub_video.ogv (Theora, default) or .mp4
   captionOffset?: { x: number; y: number }; // Global caption offset for video preview
   captionAlign?: 'left' | 'center' | 'right'; // Global caption alignment
   hasCustomIcon?: boolean;

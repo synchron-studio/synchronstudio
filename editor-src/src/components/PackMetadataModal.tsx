@@ -21,12 +21,13 @@ export const PackMetadataModal: React.FC<PackMetadataModalProps> = ({
   const [sceneId, setSceneId] = useState(packInfo.sceneId || '');
   const [authorsStr, setAuthorsStr] = useState(packInfo.authors.join(', '));
   const [readme, setReadme] = useState(packInfo.readme);
-  const [iconFilename, setIconFilename] = useState(packInfo.iconFilename || 'ts.png');
+  const [iconFilename, setIconFilename] = useState(packInfo.iconFilename || '_icon.png');
   const [fillerFilename, setFillerFilename] = useState(packInfo.fillerImageFilename || '_pack_filler_image.png');
   const [selectedChars, setSelectedChars] = useState<string[]>(packInfo.preselectedDubCharacters);
   const [disableDubTimestamps, setDisableDubTimestamps] = useState(packInfo.disableDubTimestamps || false);
   const [excludeDraftJson, setExcludeDraftJson] = useState(packInfo.excludeDraftJson || false);
   const [excludeVideo, setExcludeVideo] = useState(packInfo.excludeVideo || false);
+  const [cvVideoFormat, setCvVideoFormat] = useState<'ogv' | 'mp4'>(packInfo.cvVideoFormat || 'ogv');
 
   useEffect(() => {
     if (isOpen) {
@@ -34,12 +35,13 @@ export const PackMetadataModal: React.FC<PackMetadataModalProps> = ({
       setSceneId(packInfo.sceneId || '');
       setAuthorsStr(packInfo.authors.join(', '));
       setReadme(packInfo.readme);
-      setIconFilename(packInfo.iconFilename || 'ts.png');
+      setIconFilename(packInfo.iconFilename || '_icon.png');
       setFillerFilename(packInfo.fillerImageFilename || '_pack_filler_image.png');
       setSelectedChars(packInfo.preselectedDubCharacters);
       setDisableDubTimestamps(packInfo.disableDubTimestamps || false);
       setExcludeDraftJson(packInfo.excludeDraftJson || false);
       setExcludeVideo(packInfo.excludeVideo || false);
+      setCvVideoFormat(packInfo.cvVideoFormat || 'ogv');
     }
   }, [isOpen, packInfo]);
 
@@ -72,6 +74,7 @@ export const PackMetadataModal: React.FC<PackMetadataModalProps> = ({
       disableDubTimestamps,
       excludeDraftJson,
       excludeVideo,
+      cvVideoFormat,
     });
     onClose();
   };
@@ -265,8 +268,30 @@ export const PackMetadataModal: React.FC<PackMetadataModalProps> = ({
               <Check className="w-3 h-3 stroke-[3]" />
             </div>
             <span className="text-zinc-300 font-medium text-xs">
-              Exclude <code className="text-amber-400">dub_video.mp4</code> video from ZIP export (for manual upload)
+              Exclude <code className="text-amber-400">dub_video</code> from the Choicer Voicer pack (for manual upload)
             </span>
+          </div>
+
+          {/* Choicer Voicer video format */}
+          <div className="py-2 px-3 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1.5">
+            <span className="text-zinc-300 font-medium text-xs block">Choicer Voicer pack video format</span>
+            <div className="flex gap-2">
+              {([
+                ['ogv', 'dub_video.ogv (Choicer Voicer, slower to encode)'],
+                ['mp4', 'dub_video.mp4 (Synchronstudio local packs, fast)'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setCvVideoFormat(value)}
+                  className={`flex-1 px-2 py-1.5 rounded text-[11px] font-medium border transition-colors cursor-pointer ${
+                    cvVideoFormat === value ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Footer buttons */}

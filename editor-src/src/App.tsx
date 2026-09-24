@@ -25,6 +25,7 @@ import { downloadBlob } from './utils/media';
 import { getSmartFilenameForCharacter, reindexClipsByCharacter } from './utils/ini';
 import { captureFrameAtTime, ZipExportProgress } from './utils/zipExporter';
 import { exportSynchronstudioZip, slugifySceneId } from './utils/ssExport';
+import { exportChoicerVoicerPack } from './utils/cvExport';
 import { importDraftZip } from './utils/zipImporter';
 import { 
   saveActiveProjectLocally, 
@@ -94,6 +95,9 @@ export default function App() {
   // Media Sources
   const [videoMedia, setVideoMedia] = useState<MediaSource | undefined>();
   const [backingTrackMedia, setBackingTrackMedia] = useState<MediaSource | undefined>();
+  // Optionale „Vocals only“-Spur: saubere Stimmen für den Ton der exportierten Zeilen
+  const [vocalsMedia, setVocalsMedia] = useState<MediaSource | undefined>();
+  const [exportTitle, setExportTitle] = useState('Packing Scene (.zip)');
 
   // Timeline / Playback State
   const [currentTime, setCurrentTime] = useState(0);
@@ -128,7 +132,8 @@ export default function App() {
       backingTrackMedia?.name,
       videoMedia?.url,
       backingTrackMedia?.url,
-      duration
+      duration,
+      vocalsMedia?.name
     );
   };
   useEffect(() => {
@@ -136,7 +141,7 @@ export default function App() {
     setHasActiveProject(true);
     const timer = setTimeout(() => latestSaveRef.current(), 600);
     return () => clearTimeout(timer);
-  }, [projectId, packInfo, characters, clips, videoMedia, backingTrackMedia, view, duration, sessionProjectLoaded]);
+  }, [projectId, packInfo, characters, clips, videoMedia, backingTrackMedia, vocalsMedia, view, duration, sessionProjectLoaded]);
   // Beim Schließen/Neuladen den letzten Stand nicht verlieren
   useEffect(() => {
     const flush = () => latestSaveRef.current();
@@ -160,6 +165,7 @@ export default function App() {
       setClips([]);
       setVideoMedia(undefined);
       setBackingTrackMedia(undefined);
+      setVocalsMedia(undefined);
       setCurrentTime(0);
       setDuration(0);
       setSelectedClipId(undefined);
@@ -184,6 +190,7 @@ export default function App() {
     // Check IndexedDB for persisted media
     const persistedVideo = await loadMediaFileFromStorage(project.id, 'video');
     const persistedBackingTrack = await loadMediaFileFromStorage(project.id, 'backingTrack');
+    const persistedVocals = project.vocalsName ? await loadMediaFileFromStorage(project.id, 'vocals') : null;
 
     const missingFiles: string[] = [];
     
@@ -261,6 +268,15 @@ export default function App() {
       });
     } else {
       setBackingTrackMedia(undefined);
+    }
+
+    if (persistedVocals && (persistedVocals instanceof File || persistedVocals instanceof Blob)) {
+      const vocFile = persistedVocals instanceof File
+        ? persistedVocals
+        : new File([persistedVocals], project.vocalsName || 'vocals.wav', { type: persistedVocals.type || 'audio/wav' });
+      handleUploadVocals(vocFile, project.id);
+    } else {
+      setVocalsMedia(undefined);
     }
 
     setCurrentTime(0);
@@ -551,6 +567,30 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Upload „Vocals only“-Spur (optional)
+  const handleUploadVocals = async (file: File, targetProjectId: string = projectId) => {
+    setIsLoading(true);
+    setLoadingMessage('Decoding vocals track...');
+    const url = URL.createObjectURL(file);
+    try {
+      const probed = await probeMediaDuration(url, 'audio');
+      const audioBuffer = await decodeAudioFile(file, probed > 480 ? { sampleRate: 22050 } : undefined);
+      saveMediaFileToStorage(targetProjectId, 'vocals', file);
+      setVocalsMedia({ type: 'audio', file, url, name: file.name, duration: audioBuffer.duration, audioBuffer });
+    } catch (err) {
+      console.error(err);
+      URL.revokeObjectURL(url);
+      showAlert('This vocals file could not be decoded. Please use WAV, MP3 or OGG.', 'Vocals track');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRemoveVocals = () => {
+    if (vocalsMedia?.url) URL.revokeObjectURL(vocalsMedia.url);
+    setVocalsMedia(undefined);
   };
 
   // Pack Icon & Filler Uploads
@@ -1153,6 +1193,7 @@ export default function App() {
       setSelectedClipId(undefined);
       setVideoMedia(undefined);
       setBackingTrackMedia(undefined);
+      setVocalsMedia(undefined);
       setCurrentTime(0);
       setDuration(0);
       setHasActiveProject(true);
@@ -1199,6 +1240,7 @@ export default function App() {
         setBackingTrackMedia(undefined);
       }
 
+      setVocalsMedia(undefined);
       setSelectedClipId(undefined);
       setCurrentTime(0);
 
@@ -1226,6 +1268,7 @@ export default function App() {
 
   // Export Modpack ZIP Archive
   const handleExportZip = async () => {
+    setExportTitle('Packing Scene (.zip)');
     setIsExporting(true);
     setExportProgress({ status: 'Starting export...', percent: 0 });
     const controller = new AbortController();
@@ -1239,7 +1282,8 @@ export default function App() {
         videoMedia,
         backingTrackMedia,
         (progress) => setExportProgress(progress),
-        controller.signal
+        controller.signal,
+        vocalsMedia
       );
 
       // Trigger file download
@@ -1279,6 +1323,54 @@ export default function App() {
     }
   };
 
+  // Export als Choicer-Voicer-Modpack (Extra)
+  const handleExportChoicerPack = async () => {
+    setExportTitle('Packing Choicer Voicer Modpack (.zip)');
+    setIsExporting(true);
+    setExportProgress({ status: 'Starting export...', percent: 0 });
+    const controller = new AbortController();
+    exportAbortControllerRef.current = controller;
+
+    try {
+      const { archive, videoFailed, videoFormat, missingAudioLines } = await exportChoicerVoicerPack(
+        packInfo,
+        characters,
+        clips,
+        videoMedia,
+        backingTrackMedia,
+        vocalsMedia,
+        (progress) => setExportProgress(progress),
+        controller.signal
+      );
+      const cleanTitle = slugifySceneId(packInfo.sceneId || packInfo.title || 'scene');
+      downloadBlob(archive, `${cleanTitle}_choicervoicer.zip`);
+
+      const notes: string[] = [];
+      const wanted = packInfo.cvVideoFormat || 'ogv';
+      if (videoFailed) notes.push(`The video could not be converted to dub_video.${wanted} in the browser — the pack contains the original video as dub_video.mp4 instead.`);
+      else if (!packInfo.excludeVideo && videoFormat !== 'none' && videoFormat !== wanted) notes.push(`The video was saved as dub_video.${videoFormat}.`);
+      if (missingAudioLines) notes.push(`${missingAudioLines} line(s) have no audio (no video or vocals audio could be decoded for them).`);
+      if (notes.length) {
+        showAlert(
+          <div className="space-y-2">{notes.map((n, i) => <p key={i}>{n}</p>)}</div>,
+          'Export notes'
+        );
+      }
+    } catch (err: any) {
+      if (err?.message === 'EXPORT_CANCELLED' || controller.signal.aborted) {
+        console.log('Choicer Voicer export cancelled by user.');
+      } else {
+        console.error('Failed to export Choicer Voicer pack:', err);
+        const detail = String(err?.message || err || '').slice(0, 220);
+        showAlert(detail ? `Export failed: ${detail}` : 'Failed to generate the modpack. Please try again.', 'Export Error');
+      }
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
+      exportAbortControllerRef.current = null;
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-100 font-sans overflow-hidden selection:bg-amber-500/30 selection:text-amber-100">
       {/* Mobile/Tablet Warning Overlay */}
@@ -1310,6 +1402,7 @@ export default function App() {
         onOpenMetadata={() => setIsMetadataOpen(true)}
         onOpenGuidelines={() => setIsGuidelinesOpen(true)}
         onExportZip={handleExportZip}
+        onExportChoicerPack={handleExportChoicerPack}
         onExportDraft={handleExportDraft}
         onImportDraft={handleImportDraft}
         onReset={() => handleResetBlank(true)}
@@ -1354,6 +1447,9 @@ export default function App() {
             <UploadPanel
               videoMedia={videoMedia}
               backingTrackMedia={backingTrackMedia}
+              vocalsMedia={vocalsMedia}
+              onUploadVocals={handleUploadVocals}
+              onRemoveVocals={handleRemoveVocals}
               packInfo={packInfo}
               onUploadVideo={handleUploadVideo}
               onUploadBackingTrack={handleUploadBackingTrack}
@@ -1642,7 +1738,7 @@ export default function App() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
             <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto" />
             <div>
-              <h3 className="font-bold text-zinc-100 text-sm">Packing Modpack (.zip)</h3>
+              <h3 className="font-bold text-zinc-100 text-sm">{exportTitle}</h3>
               <p className="text-xs text-amber-300 font-mono mt-1 min-h-[1.25rem] truncate px-2">{exportProgress.status}</p>
             </div>
             <div className="space-y-1.5">

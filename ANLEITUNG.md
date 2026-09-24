@@ -87,6 +87,10 @@ Aus deinem Choicer-Voicer-Pack konvertiert:
 5. **Ins Repo:** ZIP im Repo-Ordner entpacken, den Inhalt von `scene.json` in `scenes.json` einfügen (Komma zwischen Einträgen!), dann `node tools/sync-scene-index.cjs` ausführen — **ohne diesen Schritt taucht die Szene im Spiel nicht auf** (das Spiel liest `scenes-index.json` + `scenedata/`). Die `README.txt` im ZIP erklärt alles nochmal Schritt für Schritt.
 6. Ist das Video größer als ~20 MB, steht ein Hinweis in der `README.txt` (CDN-Grenze → Eintrag in `OVERSIZE_MP4` in `client.js`).
 
+**Optional – „Vocals Only“-Spur:** Hast du aus dem Vocal Remover auch die reine Stimmen-Spur (nur Stimmen, ohne Musik), lade sie im Editor bei „Vocals Only (line audio)“ hoch. Dann werden die Original-Zeilen beim Export daraus geschnitten → saubere Stimmen ohne Musik im Hintergrund. Ohne diese Spur kommen die Zeilen wie bisher aus dem Videoton.
+
+**Extra – „Export Choicer Voicer Pack“:** Exportiert dasselbe Projekt zusätzlich als Choicer-Voicer-Modpack (`_pack_info.ini`, `_icon.png`, `dub_video.ogv`, `_backing_track`, pro Zeile `.ini` + `.wav`, Figurenbilder). Das ZIP lässt sich auch direkt im Spiel als lokales Pack laden. Videoformat in „Pack Settings“: `.ogv` (Choicer Voicer, das Umwandeln dauert im Browser etwas) oder `.mp4` (schnell).
+
 Tipp: Der Editor speichert das Projekt automatisch im Browser. Über „Export Draft“ bzw. das Export-ZIP lässt es sich auch später wieder öffnen („Import ZIP“ auf der Startseite — auch fertige Choicer-Voicer-Packs).
 
 **Faustregeln für gutes Lip-Timing:** Start lieber 0,1 s zu früh als zu spät · Ende = wo die nächste Line beginnt · Grunzer/Geräusche als eigene Lines anlegen · Test im Spiel machen und Zeiten im JSON nachjustieren.

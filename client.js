@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.22.0";
+const APP_VERSION = "9.23.0";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -776,6 +776,15 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.23.0", items: [
+    "📦 Szenen-Editor: neuer Button „Export Choicer Voicer Pack“ — dasselbe Projekt zusätzlich als Choicer-Voicer-Modpack (dub_video.ogv oder .mp4, Zeilen als .ini + .wav, Figurenbilder)",
+    "🎤 Optionale „Vocals Only“-Spur im Editor: exportierte Original-Zeilen kommen dann aus den reinen Stimmen statt aus dem Videoton (ohne Musik im Hintergrund)",
+    "🎬 Lokale Packs mit mehreren Videos nehmen jetzt das am besten abspielbare (MP4 vor OGV)"
+  ], itemsEn: [
+    "📦 Scene editor: new “Export Choicer Voicer Pack” button — the same project additionally as a Choicer Voicer modpack (dub_video.ogv or .mp4, lines as .ini + .wav, character pictures)",
+    "🎤 Optional “Vocals Only” track in the editor: exported original lines are then cut from the clean vocals instead of the video audio (no music in the background)",
+    "🎬 Local packs with several videos now pick the most playable one (MP4 before OGV)"
+  ]},
   { v: "9.22.0", items: [
     "🛠 Szenen-Editor: Export brach nach dem Neuladen der Seite ab (gespeicherte Bilddateien waren kaputt) — behoben, Projekte lassen sich jederzeit wieder exportieren",
     "🎬 Export schnitt das Video ab, wenn der Backing-Track kürzer war — jetzt bleibt immer die volle Videolänge; „Abbrechen“ stoppt das Video-Encoding wirklich",
@@ -6922,8 +6931,11 @@ async function buildSceneFromPack(files, packName) {
 
   // ── Video + Backing-Track ──
   let videoName = null, backingName = null;
+  // Liegen mehrere Videos im Pack, das nehmen, das am ehesten überall abspielbar ist
+  const videoRang = { mp4: 0, webm: 1, mov: 2, ogv: 3, ogg: 4 };
   kurz.forEach((_, n) => {
-    if (/^dub_video\.(mp4|ogv|webm|ogg|mov)$/.test(n)) videoName = n;
+    const vm = /^dub_video\.(mp4|ogv|webm|ogg|mov)$/.exec(n);
+    if (vm && (!videoName || videoRang[vm[1]] < videoRang[videoName.split(".").pop()])) videoName = n;
     if (/^_backing_track\.(mp3|wav|ogg|m4a|opus)$/.test(n)) backingName = n;
   });
   if (!videoName) throw new PackError(tt("No dub_video found in the pack.", "Im Pack fehlt das dub_video."));
