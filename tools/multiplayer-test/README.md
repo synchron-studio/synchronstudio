@@ -31,6 +31,17 @@ Runde), `pack` / `packogv` (lokale Packs), `blind`, `daily` (Szene des Tages lad
 Jedes Szenario gibt JSON aus (`ok`, Ergebnis-Texte, Konsolenfehler aller Fenster);
 am Ende steht eine Zeile `SUMMARY`.
 
+## Handy & Tablet
+
+```bash
+node mobile.cjs                       # alle Ansichten auf iPhone SE/13, Pixel 7, iPads, Handys quer
+DEVS="iPhone SE,iPad Mini" node mobile.cjs
+```
+
+Misst pro Ansicht seitliches Überlaufen, zu kleine Tippflächen (< 36 px), Eingabefelder unter
+16 px (iOS zoomt dann hinein) und abgeschnittenen Text; Screenshots landen in `mobile-shots/`.
+Wichtig: keine `fullPage`-Screenshots verwenden — die schalten die Touch-Emulation still ab.
+
 ## Wie es funktioniert
 
 - Ein lokaler PeerJS-Server (Port 9000) ersetzt `0.peerjs.com`; `window.Peer` wird im

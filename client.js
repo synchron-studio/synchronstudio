@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.24.0";
+const APP_VERSION = "9.24.1";
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -269,8 +269,17 @@ let premPlayerVolToggleBound = false;
 const $ = (id) => document.getElementById(id);
 let show = (id) => {
   const el = $(id); if (!el) return;
+  const wechsel = !el.classList.contains("active");
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   el.classList.add("active");
+  // Neuer Bildschirm: zu seinem Anfang springen, falls der gerade nicht im Bild ist. Sonst
+  // landete man auf dem Handy mitten im neuen Screen (z. B. nach „Start“ ganz unten in der Lobby).
+  if (wechsel) {
+    const top = el.getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.75) {
+      try { window.scrollTo({ top: Math.max(0, window.scrollY + top - 10), behavior: "auto" }); } catch {}
+    }
+  }
 };
 const status = (id, msg, isErr) => {
   const el = $(id); if (!el) return;
@@ -779,6 +788,21 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.24.1", items: [
+    "📱 Handy: Beim Einsprechen sieht man jetzt Video, Text und Aufnahme-Knopf gleichzeitig — vorher waren Video und Text beim Antippen von „Aufnehmen“ außerhalb des Bildschirms",
+    "📱 Handy: Text-Streifen steht unter dem Video statt darüber (verdeckte die Münder), Aufnehmen/Weiter direkt unter der Wellenform, Handy quer passt alles auf einen Bildschirm",
+    "🏆 Siegerpodest auf schmalen Handys: Platz 1 und 2 wurden abgeschnitten — jetzt passen alle drei Säulen",
+    "👆 Patch-Notes-Knopf lag auf Handys über dem letzten Knopf der Seite (z. B. „Weiter“ beim Profilbild) — behoben",
+    "👆 Tablets & Handys quer: Sprachumschalter, Filter, Sterne, Lautstärke-Knöpfe groß genug zum Antippen; Rundenauswahl lässt iPhones nicht mehr hineinzoomen",
+    "📱 Beim Wechsel in einen neuen Bildschirm landet man an dessen Anfang statt irgendwo in der Mitte; kleinstes iPhone wackelt in der Lobby nicht mehr seitlich"
+  ], itemsEn: [
+    "📱 Phones: while recording you now see the video, the line and the record button at the same time — before, video and text were off-screen when you tapped “Record”",
+    "📱 Phones: the line text sits below the video instead of covering it (it hid the mouths), Record/Next right under the waveform, landscape phones fit everything on one screen",
+    "🏆 Final podium on narrow phones: places 1 and 2 were cut off — all three pillars fit now",
+    "👆 The patch notes button covered the last button of the page on phones (e.g. “Continue” on the profile picture) — fixed",
+    "👆 Tablets & landscape phones: language switch, filters, stars and volume buttons are big enough to tap; the rounds picker no longer makes iPhones zoom in",
+    "📱 Switching to a new screen now starts at its top instead of somewhere in the middle; the smallest iPhone no longer wobbles sideways in the lobby"
+  ]},
   { v: "9.24.0", items: [
     "⚔ Neuer Modus Team-Battle: Team A gegen Team B synchronisieren dieselbe Szene, danach laufen beide Versionen und jeder bewertet das andere Team mit Sternen (Teams automatisch oder per Antippen einteilen)",
     "⭐ Szene des Tages: jeden Tag automatisch eine andere Szene — für alle gleich, auf der Startseite und oben in der Szenen-Auswahl",
@@ -8160,6 +8184,7 @@ $("btn-line-orig").onclick = async () => {
   const l = myLines[curLine];
   if (!lineHasOrig(l)) return;
   if (origSrc) { try { origSrc.stop(); } catch {} origSrc = null; $("btn-line-orig").textContent = t("booth.orig"); $("booth-video").pause(); return; }
+  boothFocusVideo();
   const ctx = getCtx();
   const myReqId = ++origReqId;   // eigener Zähler-Wert -- wenn sich die Line inzwischen geändert hat, brechen wir unten ab
   try {
@@ -8202,6 +8227,7 @@ $("btn-line-scene").onclick = () => {
   const v = $("booth-video");
   if (sceneStopHandler) { v.removeEventListener("timeupdate", sceneStopHandler); sceneStopHandler = null; }
   if (!v.paused) { v.pause(); $("btn-line-scene").textContent = t("booth.scene"); return; }   // 2. Klick = Stopp
+  boothFocusVideo();
   v.currentTime = Math.max(0, l.t - 0.5);
   v.volume = boothVol; v.playbackRate = practiceSpeed;
   playMedia(v).catch(() => { $("btn-line-scene").textContent = t("booth.scene"); });
@@ -8270,6 +8296,18 @@ function abortLineRec() {
 }
 if ($("btn-line-abort")) $("btn-line-abort").onclick = () => { abortLineRec(); };
 
+/**
+ * Auf Handys liegt der Aufnahme-Knopf weit unter dem Video — wer ihn antippt, sah beim
+ * Einsprechen weder Video noch Text. Beim Start eines Takes deshalb das Video ins Bild holen,
+ * sofern es nicht schon komplett sichtbar ist.
+ */
+function boothFocusVideo() {
+  const host = document.querySelector("#scr-booth .video-wipe-host");
+  if (!host || !document.querySelector("#scr-booth.active")) return;
+  const r = host.getBoundingClientRect();
+  if (r.top >= 0 && r.bottom <= window.innerHeight) return;
+  try { host.scrollIntoView({ block: "start", behavior: "smooth" }); } catch { host.scrollIntoView(true); }
+}
 $("btn-line-rec").onclick = async () => {
   if (lineRec && lineRec.state === "recording") { stopLineRec(); return; }
   if (recBusy) {
@@ -8278,6 +8316,7 @@ $("btn-line-rec").onclick = async () => {
     return;
   }
   recBusy = { t: performance.now() };
+  boothFocusVideo();
   recPrepCancel = false;
   recAbortOuttake = false;
   stopRecCue();

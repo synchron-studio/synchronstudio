@@ -33,7 +33,10 @@
     --font-mono:'Space Mono',ui-monospace,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
+  /* min-height statt height: mit fester Höhe lief der Inhalt über den Body hinaus, der Abstand unten
+     (padding-bottom) griff nie — auf Handys lag der Patch-Notes-Knopf dann über dem letzten Knopf der Seite */
+  html{height:100%}
+  body{min-height:100%}
   body{
     background:var(--bg);
     color:var(--text);
@@ -1036,6 +1039,23 @@
     input[type=text],select{font-size:16px} /* verhindert Auto-Zoom in iOS Safari */
   }
 
+  /* Touch-Geräte JEDER Breite (Tablets, Handys quer): die Handy-Regeln oben greifen erst unter 700 px —
+     dort waren Sprachumschalter, Filter-Chips und Patch-Notes-Knopf zu klein zum Antippen,
+     und Auswahlfelder unter 16 px lassen iOS Safari beim Antippen in die Seite zoomen. */
+  @media (pointer:coarse){
+    .lang-switch button{min-width:42px;min-height:40px}
+    .rf-chip{min-height:40px}
+    #patchnotes-btn{padding:10px 12px !important}  /* hat Inline-Stil */
+    .starbtn{min-width:40px;min-height:40px}
+    .pan-btn,#btn-fx-preview,#redo-panel-prem button,#redo-panel-wait button{min-height:40px}
+    .ppv-btn{min-width:40px}
+    #btn-cinema-glow{min-width:42px;min-height:42px}
+    input[type=file]{min-height:40px}
+    input[type=text],select,textarea{font-size:16px}
+  }
+  /* Ganz schmale Handys (iPhone SE): Raumcode + 👁 + 📋 passten nicht in eine Zeile, die Seite wackelte seitlich */
+  @media(max-width:380px){.roomcode-big{font-size:1.85rem;letter-spacing:.16em;padding-left:14px}}
+
   .rectime{height:6px;background:#1c1c25;border-radius:99px;overflow:hidden;margin:10px 0 8px}
   .rectime i{display:block;height:100%;width:0;background:var(--grad)}
 
@@ -1079,6 +1099,37 @@
   }
   #scr-booth canvas.viz{margin:10px 0 2px}
   #scr-booth .viz-legend{margin:0 0 8px}
+  /* Kabine auf Handys (hochkant und quer): Aufnehmen / Anhören / Weiter stehen direkt unter Video und
+     Wellenform, zwei Knöpfe pro Zeile. Vorher lag „Aufnehmen“ 550–620 px unter dem Video —
+     beim Einsprechen sah man auf dem Handy weder Bild noch Text. */
+  @media (max-width:700px), (max-height:500px) and (orientation:landscape){
+    #btn-line-rec,#btn-line-abort{order:-3}
+    #btn-line-play{order:-2}
+    #btn-line-next{order:-1}
+    .boothbtns{gap:8px}
+    .boothbtns button.big{flex:1 1 calc(50% - 4px);min-width:0;width:auto;padding-left:8px;padding-right:8px}
+    #scr-booth canvas.viz{height:104px}
+  }
+  /* Handys: Textstreifen unter statt über das Video — auf dem kleinen Bild verdeckte er bis zu
+     zwei Drittel, inklusive der Münder, nach denen man das Timing ausrichtet */
+  @media (max-width:700px), (max-height:500px) and (orientation:landscape){
+    #scr-booth .lineplate{position:static;border-top:2px solid rgba(240,168,48,.4);padding:8px 12px 9px;
+      background:linear-gradient(180deg,#14141a,#0c0c11);box-shadow:none}
+    #scr-booth .lineplate .lcap{font-size:1rem}
+    #scr-booth .video-wipe-host{max-height:none !important}  /* Video + Textstreifen untereinander */
+    /* Im Spiel stören die festen Ecken-Knöpfe: Patch Notes weg, „Raum verlassen“ kompakt */
+    body.ingame #patchnotes-btn{display:none}
+    body.ingame #leave-btn{padding:9px 12px !important;font-size:.76rem !important;opacity:.85}
+  }
+  /* Handy quer: wenig Höhe — Video kleiner, drei Knöpfe pro Zeile, Legende weg */
+  @media (max-height:500px) and (orientation:landscape){
+    #scr-booth .video-wipe-host{max-height:none !important}
+    #booth-video{max-height:36vh !important}
+    #booth-video{object-fit:contain}
+    #scr-booth .viz-legend{display:none}
+    .boothbtns button.big{flex-basis:calc(33.33% - 6px);min-height:44px;padding-top:8px;padding-bottom:8px}
+    #scr-booth canvas.viz{height:56px}
+  }
 
   .prompter{margin-top:14px;min-height:60px}
   .pline{display:flex;gap:14px;align-items:center;background:#14141b;border:1px solid var(--line);border-radius:12px;padding:12px 16px;transition:.2s}
@@ -1358,6 +1409,17 @@
     .podium-slot{width:96px}
     .podium-pillar{width:92px}
     .podium-also{gap:12px}
+  }
+  /* Schmale Handys: drei feste 96-px-Säulen passten nicht in ~230–300 px — Platz 1 und 2 wurden
+     links/rechts abgeschnitten. Jetzt teilen sich die Säulen die Breite. */
+  @media(max-width:430px){
+    .podium-stage{padding-left:6px;padding-right:6px}
+    .podium-wrap{gap:6px}
+    .podium-slot{width:auto;flex:1 1 0;min-width:0}
+    .podium-pillar{width:100%}
+    .podium-slot .p-name{max-width:100%;font-size:.85rem}
+    .p-avatar-wrap,.p-avatar-wrap .pavatar{width:50px;height:50px;font-size:1.15rem}
+    #podium-1 .p-avatar-wrap,#podium-1 .p-avatar-wrap .pavatar{width:64px;height:64px;font-size:1.5rem}
   }
 
   .finalrow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
@@ -2173,10 +2235,10 @@
       <button class="primary" id="btn-ach-close" data-i18n="ach.close">Close</button>
     </div>
   </div>
-  <script src="i18n.js?v=9.24.0"></script>
+  <script src="i18n.js?v=9.24.1"></script>
   <script src="fix-webm-duration.js"></script>
-  <script src="reliability.js?v=9.24.0"></script>
-  <script src="client.js?v=9.24.0"></script>
+  <script src="reliability.js?v=9.24.1"></script>
+  <script src="client.js?v=9.24.1"></script>
   <!-- Besucherzähler (GoatCounter) — Stats: https://synchronstudio.goatcounter.com -->
   <script data-goatcounter="https://synchronstudio.goatcounter.com/count"
           async src="https://gc.zgo.at/count.js"></script>

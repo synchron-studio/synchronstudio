@@ -66,7 +66,8 @@ const INIT = () => {
 };
 
 async function newPlayer(browser, name, opts = {}) {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: opts.viewport || { width: 1280, height: 900 }, permissions: ['microphone'] });
+  // opts.device: Playwright-Gerätebeschreibung (Handy/Tablet: viewport, isMobile, hasTouch, userAgent …)
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: opts.viewport || { width: 1280, height: 900 }, ...(opts.device || {}), permissions: ['microphone'] });
   await ctx.addInitScript(INIT);
   if (opts.storage) await ctx.addInitScript((s) => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); }, opts.storage);
   await ctx.route('**/*', async (route) => {
@@ -185,7 +186,9 @@ async function booth(page, nRecord = 1, recMs = 1200) {
     const st = await page.evaluate(() => ({ scr: document.querySelector('.screen.active')?.id, cur: curLine, n: myLines.length }));
     if (st.scr !== 'scr-booth') break;
     if (st.cur >= st.n) break;
-    if (st.cur < nRecord) {
+    // „Überspringen“ gibt es nur für Zeilen mit Original-Ton — sonst aufnehmen
+    const canSkip = await page.evaluate(() => { const k = document.getElementById('btn-line-skip'); return !!(k && k.style.display !== 'none'); });
+    if (st.cur < nRecord || !canSkip) {
       await page.waitForFunction(() => !document.getElementById('btn-line-rec').disabled, null, { timeout: 60000 });
       await page.click('#btn-line-rec');
       await sleep(recMs);
