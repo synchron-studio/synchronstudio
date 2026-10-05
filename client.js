@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.0";
+const APP_VERSION = "9.25.1";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,6 +816,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.1", items: [
+    "🎬 Neue Szene: Reze's Conspiracy Lesson"
+  ], itemsEn: [
+    "🎬 New scene: Reze's Conspiracy Lesson"
+  ]},
   { v: "9.25.0", items: [
     "🎲 Chaos-Modus (Match-Einstellungen, für alle Modi): jede Zeile bekommt einen zufälligen Stimmeffekt — Helium, Roboter, Monster, Telefon … Im Team-Battle haben beide Teams dieselben Effekte",
     "👤 Mein Profil: gespielte Runden, aufgenommene Zeilen, Sterne-Schnitt, Siege, Lieblingsszene und Erfolge auf einen Blick",
@@ -2044,6 +2049,9 @@ const AVATAR_CHARS = [
   { img: "scenes/akazafullfight/tanjiro.png", label: "Tanjiro (FULL FIGHT)" },
   { img: "scenes/akazafullfight/keizo.png", label: "Keizo" },
   { img: "scenes/akazafullfight/tanjirosdad.png", label: "Tanjiro's Dad" },
+  { img: "scenes/reze_s_conspiracy_lesson/reze.png", label: "Reze · Reze's Conspiracy Lesson" },
+  { img: "scenes/reze_s_conspiracy_lesson/denji.png", label: "Denji · Reze's Conspiracy Lesson" },
+  { img: "scenes/reze_s_conspiracy_lesson/pochita.png", label: "Pochita · Reze's Conspiracy Lesson" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
