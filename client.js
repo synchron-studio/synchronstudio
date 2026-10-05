@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.1";
+const APP_VERSION = "9.25.2";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,6 +816,13 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.2", items: [
+    "🇩🇪 Reze's Conspiracy Lesson: deutsche Untertitel von Hand überarbeitet",
+    "📦 Szenen-Import kann jetzt auch Choicer-Voicer-Packs und übersetzt fehlende Sprachen automatisch (Deutsch ↔ Englisch)"
+  ], itemsEn: [
+    "🇩🇪 Reze's Conspiracy Lesson: German subtitles reworked by hand",
+    "📦 The scene import now also accepts Choicer Voicer packs and translates missing languages automatically (German ↔ English)"
+  ]},
   { v: "9.25.1", items: [
     "🎬 Neue Szene: Reze's Conspiracy Lesson"
   ], itemsEn: [
@@ -2049,9 +2056,9 @@ const AVATAR_CHARS = [
   { img: "scenes/akazafullfight/tanjiro.png", label: "Tanjiro (FULL FIGHT)" },
   { img: "scenes/akazafullfight/keizo.png", label: "Keizo" },
   { img: "scenes/akazafullfight/tanjirosdad.png", label: "Tanjiro's Dad" },
-  { img: "scenes/reze_s_conspiracy_lesson/reze.png", label: "Reze · Reze's Conspiracy Lesson" },
-  { img: "scenes/reze_s_conspiracy_lesson/denji.png", label: "Denji · Reze's Conspiracy Lesson" },
-  { img: "scenes/reze_s_conspiracy_lesson/pochita.png", label: "Pochita · Reze's Conspiracy Lesson" },
+  { img: "scenes/reze_s_conspiracy_lesson/reze.png", label: "Reze · Chainsaw Man — Reze's Conspiracy Lesson" },
+  { img: "scenes/reze_s_conspiracy_lesson/denji.png", label: "Denji · Chainsaw Man — Reze's Conspiracy Lesson" },
+  { img: "scenes/reze_s_conspiracy_lesson/pochita.png", label: "Pochita · Chainsaw Man — Reze's Conspiracy Lesson" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
