@@ -1,0 +1,6 @@
+Diese Szene wurde NICHT eingebaut.
+
+Grund:
+Im ZIP fehlt scene.json. Bitte im Szenen-Editor „Export Scene (.zip)“ benutzen und das ZIP unverändert hochladen.
+
+Nach dem Beheben das ZIP einfach nochmal in den Ordner _import/ hochladen.
