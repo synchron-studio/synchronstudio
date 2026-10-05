@@ -1,6 +1,0 @@
-Diese Szene wurde NICHT eingebaut.
-
-Grund:
-Die Szene heißt noch „newscene“ (Standardname). Bitte im Szenen-Editor unter „Pack Settings“ einen eigenen Titel / eine eigene Szenen-ID vergeben — sonst überschreiben sich verschiedene Szenen gegenseitig.
-
-Nach dem Beheben das ZIP einfach nochmal in den Ordner _import/ hochladen.
