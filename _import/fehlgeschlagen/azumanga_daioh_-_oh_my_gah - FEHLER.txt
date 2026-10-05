@@ -1,6 +1,0 @@
-Diese Szene wurde NICHT eingebaut.
-
-Grund:
-Im ZIP wurde weder ein Szenen-Export (scene.json) noch ein Choicer-Voicer-Pack (_pack_info.ini, dub_video, Zeilen-.txt) gefunden. Bitte das ZIP aus dem Szenen-Editor oder das Pack unverändert hochladen.
-
-Nach dem Beheben das ZIP einfach nochmal in den Ordner _import/ hochladen.

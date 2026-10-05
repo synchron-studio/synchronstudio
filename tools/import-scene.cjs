@@ -49,8 +49,20 @@ function extract(zipFile) {
   // „Reze s Conspiracy Lesson/_pack_info.ini“)? Dann den nehmen.
   const looksLikeScene = (d) => fs.existsSync(path.join(d, 'scene.json')) || isChoicerPack(d);
   if (!looksLikeScene(dir)) {
-    const subs = fs.readdirSync(dir).filter(n => !n.startsWith('__MACOSX') && fs.statSync(path.join(dir, n)).isDirectory() && looksLikeScene(path.join(dir, n)));
-    if (subs.length === 1) return { dir: path.join(dir, subs[0]), cleanup: dir };
+    // auch mehrfach verschachtelt („szene/Szene - Titel/_pack_info.ini“) — bis 4 Ebenen tief suchen
+    const hits = [];
+    const walk = (d, depth) => {
+      if (depth > 4) return;
+      for (const n of fs.readdirSync(d)) {
+        if (n.startsWith('__MACOSX') || n.startsWith('.')) continue;
+        const p = path.join(d, n);
+        if (!fs.statSync(p).isDirectory()) continue;
+        if (looksLikeScene(p)) hits.push(p); else walk(p, depth + 1);
+      }
+    };
+    walk(dir, 1);
+    if (hits.length === 1) return { dir: hits[0], cleanup: dir };
+    if (hits.length > 1) throw new ImportError(`Im ZIP stecken ${hits.length} Szenen/Packs auf einmal — bitte jedes einzeln als eigenes ZIP hochladen.`);
   }
   return { dir, cleanup: dir };
 }
@@ -305,7 +317,9 @@ function cleanCaption(c) {
     const parts = w.split('-');
     return (parts.length >= 3 || SMALL.has(parts[0].toLowerCase())) ? parts.join(' ') : w;
   });
-  t = t.replace(/[“”]/g, '"').replace(/\s+([!?.,])/g, '$1').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+  t = t.replace(/[“”„]/g, '"').replace(/\s+([!?.,])/g, '$1').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+  t = t.replace(/\*([^*]+)\*/g, '($1)');                       // *grunts* → (grunts)
+  const m = /^"([^"]*)"$/.exec(t); if (m) t = m[1].trim();         // ganzer Satz in Anführungszeichen
   return t;
 }
 /** Starke VFX-Angaben auf einen Spiel-Effekt abbilden (leichter Raumhall bleibt weg). */
@@ -327,7 +341,7 @@ function convertChoicerPack(dir, takenIds) {
   const all = fs.readdirSync(dir);
   const find = (re) => all.find(n => re.test(n));
   const info = fs.existsSync(path.join(dir, '_pack_info.ini')) ? parseIni(fs.readFileSync(path.join(dir, '_pack_info.ini'), 'utf8')) : {};
-  const rawTitle = String(info.title || path.basename(dir)).replace(/[.…]+$/, '').trim();
+  const rawTitle = String(info.title || path.basename(dir)).replace(/[.…]+$/, '').trim().replace(/\s+-\s+/, ' — ');
   const videoName = find(/^dub_video\.(ogv|mp4|webm|mov|mkv)$/i);
   if (!videoName) throw new ImportError('Im Pack fehlt dub_video (.ogv/.mp4).');
   const backingName = find(/^_backing_track\.(mp3|wav|ogg|m4a|opus|flac|aac)$/i);
@@ -365,16 +379,35 @@ function convertChoicerPack(dir, takenIds) {
   const files = new Map();
   // Video: Bild aus dub_video, Ton nur aus dem Backing-Track (volle Videolänge)
   const mp4 = path.join(out, 'scene.mp4');
+  // Ohne _backing_track: der Videoton enthält die Originalstimmen. Dann den Videoton nehmen, ihn aber
+  // genau an den Zeilen-Stellen stumm schalten — Hintergrund zwischen den Zeilen bleibt, Originalstimmen
+  // laufen nie unter den eigenen Aufnahmen mit.
+  const videoHasAudio = (() => { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-i', videoSrc], { stdio: 'pipe' }); } catch (e) { return /Audio:/.test(String(e.stderr || '')); } return false; })();
+  let muteWindows = [];
+  if (!backingName && videoHasAudio) {
+    for (const m of metas) {
+      const d = m.audio ? probeDuration(path.join(dir, m.audio)) : null;
+      muteWindows.push([Math.max(0, m.t - 0.06), m.t + (d && d > 0.2 ? d : 2) + 0.06]);
+    }
+  }
   const encode = (width, crf) => {
-    const audioIn = backingName ? ['-i', path.join(dir, backingName)] : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo'];
-    ffmpegRun(['-i', videoSrc, ...audioIn, '-map', '0:v:0', '-map', '1:a:0', '-t', videoDur.toFixed(3),
+    let audioIn, audioMap, af = 'apad';
+    if (backingName) { audioIn = ['-i', path.join(dir, backingName)]; audioMap = '1:a:0'; }
+    else if (videoHasAudio) {
+      audioIn = []; audioMap = '0:a:0';
+      const cond = muteWindows.map(([a, b]) => `between(t,${a.toFixed(3)},${b.toFixed(3)})`).join('+') || '0';
+      af = `volume=enable='${cond}':volume=0,apad`;
+    } else { audioIn = ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']; audioMap = '1:a:0'; }
+    ffmpegRun(['-i', videoSrc, ...audioIn, '-map', '0:v:0', '-map', audioMap, '-t', videoDur.toFixed(3),
       '-vf', `scale='min(${width},iw)':-2`, '-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf), '-pix_fmt', 'yuv420p',
-      '-af', 'apad', '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', mp4], 'Das Video');
+      '-af', af, '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', mp4], 'Das Video');
   };
   encode(1280, 27);
   if (fs.statSync(mp4).size > CDN_LIMIT_BYTES) encode(1280, 30);
   if (fs.statSync(mp4).size > CDN_LIMIT_BYTES) encode(854, 30);
-  if (!backingName) notes.push('Im Pack fehlte _backing_track — das Szenen-Video hat deshalb keinen Hintergrundton.');
+  if (!backingName) notes.push(videoHasAudio
+    ? 'Im Pack fehlte _backing_track — als Hintergrund dient der Videoton, an den Stellen der Zeilen stummgeschaltet (sonst wären die Originalstimmen zu hören). Mit einem Backing-Track (Ton ohne Stimmen) klingt es besser.'
+    : 'Im Pack fehlte _backing_track und das Video hat keinen Ton — die Szene läuft ohne Hintergrundton.');
   files.set(`scenes/${id}.mp4`, mp4);
 
   // Figurenbilder: Bild der ersten Zeile jeder Figur, 160 px breit
@@ -456,7 +489,7 @@ function curlGet(url, params) {
   return cp.execFileSync('curl', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 8 * 1024 * 1024 });
 }
 function googleTranslate(text, from, to) {
-  const data = JSON.parse(curlGet('https://translate.googleapis.com/translate_a/single', { client: 'gtx', sl: from, tl: to, dt: 't', q: text }));
+  const data = JSON.parse(curlGet('https://translate.googleapis.com/translate_a/single', { client: 'gtx', sl: from === 'en' ? 'auto' : from, tl: to, dt: 't', q: text }));
   const out = (data[0] || []).map(x => x[0]).join('');
   if (!out.trim()) throw new Error('leere Antwort');
   return out;
