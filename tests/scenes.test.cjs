@@ -64,7 +64,7 @@ z.close()`;
   mkzip('good.zip', 'importtest_scene');
   mkzip('default-name.zip', 'newscene');
   let code = 0;
-  try { execFileSync(process.execPath, [path.join(tmp, 'tools', 'import-scene.cjs')], { cwd: tmp, env: { ...process.env, SS_ROOT: tmp, GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '' }, stdio: 'pipe' }); }
+  try { execFileSync(process.execPath, [path.join(tmp, 'tools', 'import-scene.cjs')], { cwd: tmp, env: { ...process.env, SS_ROOT: tmp, SS_NO_TRANSLATE: '1', GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '' }, stdio: 'pipe' }); }
   catch (e) { code = e.status; }
   assert.equal(code, 1, 'a failed ZIP makes the run fail (red in GitHub)');
   const scenes = JSON.parse(fs.readFileSync(path.join(tmp, 'scenes.json'), 'utf8'));

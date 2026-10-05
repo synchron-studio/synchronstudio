@@ -31,7 +31,7 @@ Fertig. Dieser Link ist ab jetzt dein Spiel — er läuft immer, kostet nichts, 
 2. Auf GitHub ins Repo → Ordner **`_import`** öffnen → **„Add file“ → „Upload files“** → ZIP reinziehen → **„Commit changes“**
 3. Nach ca. 3–5 Minuten ist die Szene im Spiel. Unter **„Actions“ → „Szenen importieren“** siehst du: ✅ eingebaut oder ❌ mit Grund (der steht auch in `_import/fehlgeschlagen/`).
 
-Gleiche Szenen-ID nochmal hochladen = Szene wird ersetzt. Maximal 25 MB pro ZIP (GitHub-Grenze beim Hochladen über die Website).
+Statt des Editor-ZIPs geht auch ein **Choicer-Voicer-Pack** — es wird automatisch umgewandelt (Video mit Backing-Track, Original-Zeilen, Figurenbilder). Fehlt Deutsch oder Englisch, wird automatisch übersetzt. Gleiche Szenen-ID nochmal hochladen = Szene wird ersetzt. Maximal 25 MB pro ZIP (GitHub-Grenze beim Hochladen über die Website).
 
 ### Neu in v9.24
 

@@ -1,6 +1,8 @@
 # 🎬 Szenen hier hochladen → kommen automatisch ins Spiel
 
-1. Im **Szenen-Editor** die Szene fertig machen und **„Export Scene (.zip)“** klicken.
+1. ZIP besorgen — **beides geht**:
+   - aus dem **Szenen-Editor**: **„Export Scene (.zip)“**
+   - ein **Choicer-Voicer-Pack** (Ordner mit `_pack_info.ini`, `dub_video.ogv`, `_backing_track`, Zeilen als `.txt`/`.ini` + `.wav`) — wird automatisch umgewandelt
 2. Hier auf GitHub in diesem Ordner oben rechts **„Add file“ → „Upload files“** klicken.
 3. Das ZIP (unverändert, nicht entpacken!) ins Fenster ziehen → unten **„Commit changes“**.
 4. Fertig. Nach ca. **3–5 Minuten** ist die Szene im Spiel (Seite mit Strg+F5 neu laden).
@@ -9,6 +11,9 @@
 - ✅ grüner Haken = eingebaut (in der Zusammenfassung steht, was genau)
 - ❌ rotes Kreuz = nicht eingebaut. Der Grund steht in der Zusammenfassung **und** in
   `_import/fehlgeschlagen/<name> - FEHLER.txt`. Fehler beheben, ZIP nochmal hier hochladen.
+
+**Deutsch & Englisch:** Fehlt eine Sprache, wird sie beim Einbauen automatisch übersetzt (maschinell) —
+englische Zeilen bekommen eine deutsche Fassung, deutsche Zeilen eine englische.
 
 **Gleiche Szene nochmal hochladen** (gleiche Szenen-ID) = die alte Version wird ersetzt.
 
