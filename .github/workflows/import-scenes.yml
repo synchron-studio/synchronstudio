@@ -44,8 +44,11 @@ jobs:
         continue-on-error: true
         run: node tools/import-scene.cjs
 
+      # Neue Dateien vormerken — der Szenen-Test prüft die Dateiliste von Git
       - name: Spiel testen
-        run: npm test
+        run: |
+          git add -A
+          npm test
 
       - name: Speichern
         id: commit
