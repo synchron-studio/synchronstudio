@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.3";
+const APP_VERSION = "9.25.4";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,6 +816,13 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.4", items: [
+    "🇩🇪 Azumanga Daioh — Oh My Gah: deutsche Untertitel von Hand überarbeitet",
+    "📦 Szenen-Import: auch Packs in verschachtelten Ordnern und Packs ohne Backing-Track (Originalstimmen werden dann stummgeschaltet)"
+  ], itemsEn: [
+    "🇩🇪 Azumanga Daioh — Oh My Gah: German subtitles reworked by hand",
+    "📦 Scene import: also packs in nested folders and packs without a backing track (original voices are muted then)"
+  ]},
   { v: "9.25.3", items: [
     "🎬 Neue Szene: Azumanga Daioh — Oh My Gah"
   ], itemsEn: [
