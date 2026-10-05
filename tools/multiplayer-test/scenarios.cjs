@@ -3,7 +3,7 @@
 //         ONLY=team3,duel node scenarios.cjs
 const path = require('path');
 const H = require('./harness.cjs');
-const ALL = 'free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,ownvideo,ttt';
+const ALL = 'chaos,chaosteam,profile,free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,ownvideo,ttt';
 const which = (process.env.ONLY || ALL).split(',');
 const results = [];
 async function scenario(name, fn) {
@@ -32,6 +32,58 @@ async function freeRound(ps, host, sceneId, roles) {
   await H.hostStart(host);
 }
 (async () => {
+  // Chaos-Modus: jede Zeile bekommt einen Zufallseffekt, Gäste kennen ihn, Premiere + Bewertung laufen
+  await scenario('chaos', async (b, reg) => {
+    const { ps, host } = await H.room(b, 2); reg(ps);
+    await host.check('#set-chaos');
+    await H.sleep(600);
+    const guestKnows = await ps[1].evaluate(() => match.chaos);
+    await H.hostLoadScene(host, 'ghostweight');
+    await ps[1].waitForFunction(() => scene && scene.id, null, { timeout: 20000 });
+    await H.pickRole(host, 0); await H.pickRole(ps[1], 1);
+    await H.ready(host); await H.ready(ps[1]);
+    await H.hostStart(host);
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-booth', 60000)));
+    const fx = await Promise.all(ps.map(p => p.evaluate(() => ({ seed: match.chaosSeed, fx: myLines.map(l => myEffectOverrides[l.idx]), label: document.getElementById('line-dur').textContent }))));
+    const res = await H.playNormalRound(ps, host);
+    const items = await host.evaluate(() => mixItems.filter(i => !i.isOrig).map(i => i.effect));
+    return { guestKnows, fx, mixEffects: items, res, ach: await H.achOf(ps[1]) };
+  });
+  // Chaos im Team-Battle: beide Teams bekommen für dieselbe Zeile denselben Effekt (fair)
+  await scenario('chaosteam', async (b, reg) => {
+    const { ps, host } = await H.room(b, 2); reg(ps);
+    await host.check('#set-chaos');
+    await H.setMode(host, 'team');
+    await host.waitForFunction(() => [...document.querySelectorAll('#team-scene-select option')].some(o => o.value === 'ghostseven'), null, { timeout: 20000 });
+    await host.selectOption('#team-scene-select', 'ghostseven');
+    await host.click('#btn-team-start');
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-booth', 90000)));
+    const per = await Promise.all(ps.map(p => p.evaluate(() => scene.lines.map((l, i) => chaosEffectFor(i)).join(','))));
+    if (per[0] !== per[1]) throw new Error('teams got different chaos effects: ' + per.join(' | '));
+    return { sameForBothTeams: true, effects: per[0] };
+  });
+  // Profil + Problem melden + Erfolge nach einer Runde
+  await scenario('profile', async (b, reg) => {
+    const { ps, host } = await H.room(b, 2); reg(ps);
+    await H.hostLoadScene(host, 'ghostseven');
+    await ps[1].waitForFunction(() => scene && scene.id, null, { timeout: 20000 });
+    await H.pickRole(host, 0); await H.pickRole(ps[1], 1);
+    await H.ready(host); await H.ready(ps[1]);
+    await H.hostStart(host);
+    await H.playNormalRound(ps, host, { stars: [5, 3] });
+    const g = ps[1];
+    await g.evaluate(() => { document.getElementById('rate-card').scrollIntoView(); });
+    await g.click('#scr-playback .prof-open').catch(async () => { await g.evaluate(() => openProfile()); });
+    await g.waitForSelector('#profile-overlay', { state: 'visible', timeout: 5000 });
+    const prof = (await g.textContent('#profile-body')).replace(/\s+/g, ' ').trim();
+    await g.click('#btn-profile-close');
+    await g.evaluate(() => console.warn('Testwarnung für den Bericht'));
+    await g.evaluate(() => openBugReport());
+    await g.waitForSelector('#bug-overlay', { state: 'visible', timeout: 5000 });
+    const report = await g.inputValue('#bug-text');
+    const st = await g.textContent('#bug-status');
+    return { prof, reportHas: ['Version:', 'Browser:', 'Ansicht:', 'Szene: ghostseven', 'Testwarnung'].map(k => k + '=' + report.includes(k)).join(' '), status: st };
+  });
   // Freies Spiel: 3 Spieler, 2 Rollen → einer schaut zu; ein Spieler nimmt Zusatzrolle? (Szene mit 3 Rollen, 2 Sprecher: P0 nimmt 2 Rollen)
   await scenario('free3', async (b, reg) => {
     const { ps, host } = await H.room(b, 3); reg(ps);

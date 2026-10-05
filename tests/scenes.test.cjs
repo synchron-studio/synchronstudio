@@ -36,3 +36,48 @@ test('scenes-index.json and scenedata/ are in sync with scenes.json', () => {
   // Wer eine Szene nur in scenes.json einträgt, sieht sie im Spiel nicht — das fängt dieser Test ab.
   execFileSync(process.execPath, [path.join(root, 'tools', 'sync-scene-index.cjs'), '--check'], { cwd: root, stdio: 'pipe' });
 });
+
+test('scene import: editor ZIP is built in, bad ZIPs are rejected with a reason', (t) => {
+  const os = require('node:os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-import-test-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  for (const f of ['scenes.json', 'scenes-index.json', 'client.js', 'index.html']) fs.copyFileSync(path.join(root, f), path.join(tmp, f));
+  fs.cpSync(path.join(root, 'scenedata'), path.join(tmp, 'scenedata'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'tools'));
+  for (const f of ['sync-scene-index.cjs', 'import-scene.cjs']) fs.copyFileSync(path.join(root, 'tools', f), path.join(tmp, 'tools', f));
+  fs.mkdirSync(path.join(tmp, '_import'));
+  // ZIPs mit Python bauen (überall vorhanden, wo die Tests laufen)
+  const mkzip = (name, id) => {
+    const scene = { id, title: 'Import Test (1 Rolle)', videoUrl: `scenes/${id}.mp4`, avatars: { 0: `scenes/${id}/hero.png` },
+      roles: [{ id: 0, name: 'Hero', pan: 0, effect: 'none', gain: 1 }],
+      lines: [{ t: 0.5, end: 2, chars: [0], who: 'Hero', text: 'Hi', de: 'Hallo', orig: `scenes/${id}/lines/01.mp3` }] };
+    const py = `import zipfile,json,sys
+z=zipfile.ZipFile(sys.argv[1],'w')
+z.writestr('scene.json', json.dumps(json.loads(sys.argv[2])))
+z.writestr('scenes/${id}.mp4', b'x'*2048)
+z.writestr('scenes/${id}/hero.png', b'png')
+z.writestr('scenes/${id}/lines/01.mp3', b'mp3')
+z.writestr('previews/${id}.mp4', b'p'*1024)
+z.close()`;
+    execFileSync('python3', ['-c', py, path.join(tmp, '_import', name), JSON.stringify(scene)]);
+  };
+  mkzip('good.zip', 'importtest_scene');
+  mkzip('default-name.zip', 'newscene');
+  let code = 0;
+  try { execFileSync(process.execPath, [path.join(tmp, 'tools', 'import-scene.cjs')], { cwd: tmp, env: { ...process.env, SS_ROOT: tmp, GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '' }, stdio: 'pipe' }); }
+  catch (e) { code = e.status; }
+  assert.equal(code, 1, 'a failed ZIP makes the run fail (red in GitHub)');
+  const scenes = JSON.parse(fs.readFileSync(path.join(tmp, 'scenes.json'), 'utf8'));
+  const added = scenes.find(s => s.id === 'importtest_scene');
+  assert.ok(added && added.imported && added.catalogChange === 'new');
+  assert.ok(!scenes.some(s => s.id === 'newscene'));
+  for (const f of ['scenes/importtest_scene.mp4', 'scenes/importtest_scene/hero.png', 'scenes/importtest_scene/lines/01.mp3', 'previews/importtest_scene.mp4', 'scenedata/importtest_scene.json'])
+    assert.ok(fs.existsSync(path.join(tmp, f)), 'copied: ' + f);
+  const client = fs.readFileSync(path.join(tmp, 'client.js'), 'utf8');
+  const v = /const APP_VERSION = "([^"]+)"/.exec(client)[1];
+  assert.ok(client.includes(`{ v: "${v}", items: [\n    "🎬 Neue Szene: Import Test"`), 'patch note for the new version');
+  assert.ok(fs.readFileSync(path.join(tmp, 'index.html'), 'latin1').includes(`client.js?v=${v}`));
+  assert.ok(!fs.existsSync(path.join(tmp, '_import', 'good.zip')), 'imported ZIP removed');
+  assert.ok(fs.existsSync(path.join(tmp, '_import', 'fehlgeschlagen', 'default-name.zip')));
+  assert.match(fs.readFileSync(path.join(tmp, '_import', 'fehlgeschlagen', 'default-name - FEHLER.txt'), 'utf8'), /Standardname/);
+});

@@ -925,6 +925,24 @@
   /* Eigene Fenster (Anleitung, Erfolge) — eigene Klasse, damit die Tipp-zum-Abspielen-Abfrage sie nie verwechselt */
   .ss-modal{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);padding:20px}
   .ss-modal .card{color:var(--text)}
+  /* Problem melden */
+  .ss-modal .card.bug-card{max-width:600px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow-y:auto}
+  .bug-card > *{flex-shrink:0}
+  #bug-text{width:100%;min-height:220px;flex:1;resize:vertical;font-family:var(--font-mono);font-size:.72rem;line-height:1.45;
+    color:var(--text);background:#0b0b10;border:1px solid var(--line);border-radius:9px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;flex-shrink:1 !important}
+  @media (pointer:coarse){#bug-text{font-size:16px;min-height:140px}}
+  /* Profil */
+  .ss-modal .card.prof-card{max-width:560px;width:100%;max-height:90vh;overflow-y:auto}
+  .prof-head{display:flex;align-items:center;gap:14px;margin:4px 0 14px}
+  .prof-head .pavatar{width:56px;height:56px;font-size:1.4rem}
+  .prof-name{font-family:var(--font-display);font-size:1.4rem;letter-spacing:.02em;text-transform:uppercase}
+  .prof-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+  .prof-tile{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:rgba(0,0,0,.22)}
+  .prof-val{font-family:var(--font-display);font-size:1.45rem;color:var(--amber);line-height:1.15}
+  .prof-lbl{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+  .prof-sub{font-size:.75rem;color:var(--muted);margin-top:2px}
+  .prof-fav{margin:14px 0 12px;padding:10px 12px;border:1px dashed rgba(240,168,48,.45);border-radius:9px;line-height:1.45}
+  #profile-body > button{margin:0 0 14px}
   /* Erfolge */
   .ss-modal .card.ach-card{max-width:540px;width:100%;max-height:88vh;display:flex;flex-direction:column}
   #ach-list{overflow-y:auto;display:grid;gap:8px;margin:12px 0 14px;padding-right:4px;min-height:0}
@@ -1558,7 +1576,7 @@
       <h2 data-i18n="daily.h2">⭐ Scene of the day</h2>
       <div id="daily-body"></div>
     </div>
-    <p style="text-align:center;margin:4px 0 0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button type="button" class="ghost ach-open">🏅 Achievements</button><button type="button" class="ghost tut-open" data-i18n="tut.open">❓ How to play</button></p>
+    <p style="text-align:center;margin:4px 0 0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button type="button" class="ghost prof-open" data-i18n="prof.open">👤 My profile</button><button type="button" class="ghost ach-open">🏅 Achievements</button><button type="button" class="ghost tut-open" data-i18n="tut.open">❓ How to play</button><button type="button" class="ghost bug-open" data-i18n="bug.open">🐞 Report a problem</button></p>
     <p class="status" id="start-status"></p>
     <p class="sub" data-i18n="start.fan" style="text-align:center;margin-top:18px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.45">
       Fan project for private fun with friends — we don’t earn anything from this.
@@ -1591,7 +1609,7 @@
         <button class="emojibtn" data-e="🎬">🎬</button>
       </div>
       <p class="lobby-tip" id="lobby-tip"></p>
-      <button type="button" class="ghost ach-open" style="margin-top:8px">🏅 Achievements</button>
+      <div class="row" style="gap:8px;margin-top:8px"><button type="button" class="ghost prof-open" data-i18n="prof.open">👤 My profile</button><button type="button" class="ghost ach-open">🏅 Achievements</button><button type="button" class="ghost bug-open" data-i18n="bug.open">🐞 Report a problem</button></div>
     </div>
 
     <div class="card" id="host-settings" style="display:none">
@@ -1638,6 +1656,10 @@
         </label>
         <span class="tag" data-i18n="host.rounds.hint">In a match, scenes &amp; roles are random every round 🎲</span>
       </div>
+      <label class="chaos-toggle" style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:12px;font-size:.92rem;color:var(--muted)">
+        <input type="checkbox" id="set-chaos" style="accent-color:var(--amber);width:17px;height:17px">
+        <span data-i18n="host.chaos">🎲 Chaos mode — every line gets a random voice effect (helium, robot, monster …)</span>
+      </label>
     </div>
     <div class="card" id="duel-setup" style="display:none">
       <h2 data-i18n="duel.h2">🥊 Set up duel</h2>
@@ -2227,6 +2249,25 @@
       </div>
     </div>
   </div>
+  <div class="ss-modal" id="profile-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="prof-h2">
+    <div class="card prof-card">
+      <h2 id="prof-h2" data-i18n="prof.h2">👤 My profile</h2>
+      <div id="profile-body"></div>
+      <button class="primary" id="btn-profile-close" data-i18n="ach.close">Close</button>
+    </div>
+  </div>
+  <div class="ss-modal" id="bug-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="bug-h2">
+    <div class="card bug-card">
+      <h2 id="bug-h2" data-i18n="bug.h2">🐞 Report a problem</h2>
+      <p class="sub" style="margin:0 0 8px" data-i18n="bug.sub">These details help find the bug fast: device, browser, what the game was doing and the last error messages. No passwords, no recordings.</p>
+      <textarea id="bug-text" readonly spellcheck="false"></textarea>
+      <p class="status" id="bug-status"></p>
+      <div class="row" style="gap:10px">
+        <button class="primary" id="btn-bug-copy" data-i18n="bug.copy">📋 Copy again</button>
+        <button class="ghost" id="btn-bug-close" data-i18n="ach.close">Close</button>
+      </div>
+    </div>
+  </div>
   <div class="ss-modal" id="ach-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ach-h2">
     <div class="card ach-card">
       <h2 id="ach-h2" data-i18n="ach.h2">🏅 Achievements</h2>
@@ -2235,10 +2276,10 @@
       <button class="primary" id="btn-ach-close" data-i18n="ach.close">Close</button>
     </div>
   </div>
-  <script src="i18n.js?v=9.24.1"></script>
+  <script src="i18n.js?v=9.25.0"></script>
   <script src="fix-webm-duration.js"></script>
-  <script src="reliability.js?v=9.24.1"></script>
-  <script src="client.js?v=9.24.1"></script>
+  <script src="reliability.js?v=9.25.0"></script>
+  <script src="client.js?v=9.25.0"></script>
   <!-- Besucherzähler (GoatCounter) — Stats: https://synchronstudio.goatcounter.com -->
   <script data-goatcounter="https://synchronstudio.goatcounter.com/count"
           async src="https://gc.zgo.at/count.js"></script>

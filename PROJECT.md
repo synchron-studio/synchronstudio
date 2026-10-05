@@ -63,6 +63,10 @@ Seit v7.1 komplett umgestylt: **"echtes Studio-Equipment"**-Ästhetik statt gene
 
 ## Neue Szenen einbauen (Standardablauf)
 
+**Automatisch (ab v9.25):** Editor-Export-ZIP nach `_import/` hochladen → `.github/workflows/import-scenes.yml` ruft `tools/import-scene.cjs` auf (prüft scene.json + Dateien, kopiert nach `scenes/`/`previews/`, ersetzt bei gleicher ID, ergänzt `AVATAR_CHARS` + `OVERSIZE_MP4`, erzeugt fehlende Vorschau per ffmpeg, `sync-scene-index`, Version + Patch Notes), testet, committet und startet `deploy-pages.yml`. Fehlerhafte ZIPs → `_import/fehlgeschlagen/` mit FEHLER.txt. Lokal: `node tools/import-scene.cjs pfad/zur.zip`.
+
+**Von Hand** (z. B. Choicer-Voicer-Packs, die erst konvertiert werden müssen):
+
 Elias schickt ein RAR/ZIP im "Mod-Pack"-Format (Choicer-Voicer-Style): Video + `_backing_track.mp3` (Ton OHNE Stimmen!) + pro Line eine `.mp3`/`.png` mit `.ini`/`.txt` (Format: `caption="..."`, `dub_timestamps=[t]`, `dub_characters=["Name"]`, manchmal `image="..."`).
 
 1. Entpacken, Metadaten aller Lines chronologisch nach Timestamp auslesen (`.ini` UND `.txt` möglich, manche Packs mischen beide!)

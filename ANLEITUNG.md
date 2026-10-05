@@ -25,6 +25,14 @@ Fertig. Dieser Link ist ab jetzt dein Spiel — er läuft immer, kostet nichts, 
 
 **Wichtig: Kopfhörer aufsetzen!** Sonst nimmt dein Mikro den Video-Ton mit auf.
 
+### 🎬 Szenen selbst ins Spiel bringen (ab v9.25, ohne Claude)
+
+1. Szene im Szenen-Editor fertig machen → **„Export Scene (.zip)“**
+2. Auf GitHub ins Repo → Ordner **`_import`** öffnen → **„Add file“ → „Upload files“** → ZIP reinziehen → **„Commit changes“**
+3. Nach ca. 3–5 Minuten ist die Szene im Spiel. Unter **„Actions“ → „Szenen importieren“** siehst du: ✅ eingebaut oder ❌ mit Grund (der steht auch in `_import/fehlgeschlagen/`).
+
+Gleiche Szenen-ID nochmal hochladen = Szene wird ersetzt. Maximal 25 MB pro ZIP (GitHub-Grenze beim Hochladen über die Website).
+
 ### Neu in v9.24
 
 - **⚔ Team-Battle** (Spielmodus in den Match-Einstellungen): Die Spieler werden automatisch auf Team A und Team B verteilt — antippen schiebt jemanden ins andere Team, „🔀 Teams mischen“ würfelt neu. Szene wählen (oder Zufall / Szene des Tages) → „⚔ Team-Battle starten“. Beide Teams sprechen dieselbe Szene, danach laufen beide Versionen nacheinander und jeder gibt dem **anderen** Team 1–5 Sterne. Das Team mit dem besseren Schnitt gewinnt.

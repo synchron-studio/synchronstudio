@@ -5,7 +5,35 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.24.1";
+const APP_VERSION = "9.25.0";
+
+// Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
+// dieses Browsers, verschickt wird nichts automatisch.
+const diagLog = [];
+(function installDiagLog() {
+  const fmt = (a) => {
+    if (a instanceof Error) return a.name + ": " + a.message;
+    if (typeof a === "string") return a;
+    if (a && typeof a === "object") { try { return JSON.stringify(a).slice(0, 200); } catch { return String(a); } }
+    return String(a);
+  };
+  const push = (kind, args) => {
+    try {
+      const text = Array.from(args).map(fmt).join(" ").replace(/\s+/g, " ").slice(0, 300);
+      diagLog.push(new Date().toTimeString().slice(0, 8) + " " + kind + " " + text);
+      if (diagLog.length > 40) diagLog.shift();
+    } catch {}
+  };
+  for (const k of ["error", "warn"]) {
+    const orig = console[k];
+    if (typeof orig !== "function") continue;
+    console[k] = function (...a) { push(k === "error" ? "FEHLER" : "WARNUNG", a); return orig.apply(this, a); };
+  }
+  window.addEventListener("error", (e) => {
+    if (e && e.message) push("FEHLER", [e.message + (e.filename ? " @" + String(e.filename).split("/").pop() + ":" + e.lineno : "")]);
+  });
+  window.addEventListener("unhandledrejection", (e) => push("FEHLER", ["(Promise) " + fmt(e && e.reason)]));
+})();
 /* i18n helpers — provided by i18n.js; tiny fallback if script missing */
 if (typeof tt !== "function") {
   window.getLang = () => { try { return localStorage.getItem("ss-lang") === "de" ? "de" : "en"; } catch { return "en"; } };
@@ -781,13 +809,26 @@ document.body.insertAdjacentHTML("beforeend",
      <div style="max-width:520px;width:100%;max-height:80vh;overflow-y:auto;background:#14141b;border:1px solid var(--line);border-radius:16px;padding:22px">
        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
          <h2 style="margin:0">📋 Patch Notes</h2>
-         <button id="patchnotes-close" class="ghost" style="padding:4px 12px">✕</button>
+         <span style="display:flex;gap:8px"><button type="button" class="ghost bug-open" style="padding:4px 12px">🐞 ${tt("Report a problem", "Problem melden")}</button><button id="patchnotes-close" class="ghost" style="padding:4px 12px">✕</button></span>
        </div>
        <div id="patchnotes-body" style="display:flex;flex-direction:column;gap:16px;font-size:.9rem;line-height:1.5"></div>
      </div>
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.0", items: [
+    "🎲 Chaos-Modus (Match-Einstellungen, für alle Modi): jede Zeile bekommt einen zufälligen Stimmeffekt — Helium, Roboter, Monster, Telefon … Im Team-Battle haben beide Teams dieselben Effekte",
+    "👤 Mein Profil: gespielte Runden, aufgenommene Zeilen, Sterne-Schnitt, Siege, Lieblingsszene und Erfolge auf einen Blick",
+    "🐞 Problem melden: ein Klick kopiert alle wichtigen Infos (Gerät, Browser, was gerade passiert ist, letzte Fehlermeldungen) zum Weiterschicken",
+    "🎬 Neue Szenen kommen jetzt auch ohne Umweg ins Spiel: Editor-ZIP auf GitHub in den Ordner _import hochladen — Prüfen, Einbauen und Veröffentlichen läuft automatisch",
+    "🏅 Neuer Erfolg: Chaos-Stimme"
+  ], itemsEn: [
+    "🎲 Chaos mode (match settings, works in every mode): every line gets a random voice effect — helium, robot, monster, phone … In team battles both teams get the same effects",
+    "👤 My profile: rounds played, lines recorded, average stars, wins, favourite scene and achievements at a glance",
+    "🐞 Report a problem: one click copies all the important details (device, browser, what just happened, last error messages) to send on",
+    "🎬 New scenes now get into the game without a detour: upload the editor ZIP to the _import folder on GitHub — checking, building in and publishing happen automatically",
+    "🏅 New achievement: Chaos voice"
+  ]},
   { v: "9.24.1", items: [
     "📱 Handy: Beim Einsprechen sieht man jetzt Video, Text und Aufnahme-Knopf gleichzeitig — vorher waren Video und Text beim Antippen von „Aufnehmen“ außerhalb des Bildschirms",
     "📱 Handy: Text-Streifen steht unter dem Video statt darüber (verdeckte die Münder), Aufnehmen/Weiter direkt unter der Wellenform, Handy quer passt alles auf einen Bildschirm",
@@ -2670,7 +2711,8 @@ function lineSpeakSeconds(l) {
 }
 function showLineDuration(l) {
   const el = $("line-dur");
-  if (el) el.textContent = "~" + Math.max(1, Math.round(lineSpeakSeconds(l))) + tt(" sec.", " Sek.");
+  if (el) el.textContent = "~" + Math.max(1, Math.round(lineSpeakSeconds(l))) + tt(" sec.", " Sek.")
+    + (match.chaos && l && myEffectOverrides[l.idx] ? " · 🎲 " + effectLabel(myEffectOverrides[l.idx]) : "");
 }
 
 // ── Studio-Spektrum: logarithmisch verteilte Bänder als LED-Ketten ──
@@ -3480,7 +3522,7 @@ document.addEventListener("visibilitychange", () => {
 
 // Language switch: refresh live booth / premiere UI strings
 document.addEventListener("ss-langchange", () => {
-  try { renderAchButtons(); renderDaily(); if ($("ach-overlay") && $("ach-overlay").style.display !== "none") renderAchList(); } catch {}
+  try { renderAchButtons(); renderDaily(); if ($("ach-overlay") && $("ach-overlay").style.display !== "none") renderAchList(); if ($("profile-overlay") && $("profile-overlay").style.display !== "none") renderProfile(); } catch {}
   try {
     if ($("scr-booth")?.classList.contains("active") && typeof renderLine === "function") renderLine();
     if (typeof renderRedoPanel === "function") {
@@ -4471,6 +4513,7 @@ function syncHostUi() {
     $("set-mode").onchange = hostSettingsChanged;
     $("set-rounds").onchange = hostSettingsChanged;
     $("set-roulette").onchange = hostSettingsChanged;
+    syncChaosToggle();
     if (duell) populateDuelSceneSelect();
     if (team) loadSceneList().then(populateTeamSceneSelect).catch(() => {});
     if (!rnd && !duell && !team) loadSceneList();
@@ -4637,6 +4680,7 @@ async function handleHostCmd(msg, sender) {
       showScene(sceneVideoSrc());
       broadcast({ t: "duelSetupInfo", duelInfo });
       broadcastState();
+      rerollChaos();
       broadcast({ t: "goLines" });
       queueOrStartBooth();
       break;
@@ -4666,6 +4710,9 @@ async function handleHostCmd(msg, sender) {
       break;
     case "nextRound":
       advanceMatch();
+      break;
+    case "chaos":
+      setChaos(!!msg.on);
       break;
     case "again":
       broadcast({ t: "again" });
@@ -5230,6 +5277,7 @@ function handleMsg(msg, conn) {
       break;
     case "settings":
       match.mode = msg.mode; match.rounds = msg.rounds; match.round = msg.round; match.autoRoulette = msg.autoRoulette;
+      match.chaos = !!msg.chaos; match.chaosSeed = msg.chaosSeed | 0; syncChaosToggle();
       renderSettingsView(msg);
       if ($("team-setup")) $("team-setup").style.display = match.mode === "team" ? "" : "none";
       if (match.mode === "team") renderTeamSetup();
@@ -5651,6 +5699,7 @@ const ACHIEVEMENTS = [
   { id: "daily_3", icon: "📅", goal: ["dailyDays", 3], en: ["Keeping at it", "Play the scene of the day on 3 different days."], de: ["Dranbleiber", "Spiele die Szene des Tages an 3 verschiedenen Tagen."] },
   { id: "arena", icon: "🎮", en: ["Arena champion", "Win a waiting-room minigame."], de: ["Arena-Champion", "Gewinne ein Warte-Arena-Spiel."] },
   { id: "night_owl", icon: "🦉", en: ["Night owl", "Play a round between midnight and 4 am."], de: ["Nachteule", "Spiele eine Runde zwischen Mitternacht und 4 Uhr."] },
+  { id: "chaos", icon: "🎲", en: ["Chaos voice", "Finish a round in chaos mode."], de: ["Chaos-Stimme", "Spiele eine Runde im Chaos-Modus."] },
   { id: "local_pack", icon: "📦", en: ["Homemade", "Play a local pack."], de: ["Selbstgemacht", "Spiele ein lokales Pack."] },
 ];
 const ACH_KEY = "ss_achievements";
@@ -5665,6 +5714,16 @@ function achLoad() {
     rounds: Math.max(0, st.rounds | 0),
     scenes: Array.isArray(st.scenes) ? st.scenes.filter(x => typeof x === "string").slice(0, 2000) : [],
     dailyDays: Array.isArray(st.dailyDays) ? st.dailyDays.filter(x => typeof x === "string").slice(-400) : [],
+    // fürs Profil (ab v9.25)
+    starSum: Math.max(0, Number(st.starSum) || 0),
+    starN: Math.max(0, st.starN | 0),
+    bestVoice: Math.max(0, st.bestVoice | 0),
+    duelWins: Math.max(0, st.duelWins | 0),
+    teamWins: Math.max(0, st.teamWins | 0),
+    matchWins: Math.max(0, st.matchWins | 0),
+    sceneCounts: (st.sceneCounts && typeof st.sceneCounts === "object") ? st.sceneCounts : {},
+    sceneTitles: (st.sceneTitles && typeof st.sceneTitles === "object") ? st.sceneTitles : {},
+    since: typeof st.since === "string" ? st.since : new Date().toISOString().slice(0, 10),
   };
   return d;
 }
@@ -5701,6 +5760,9 @@ function achOnRoundDone() {
   const st = achData.stats;
   st.rounds++;
   if (scene.id && !st.scenes.includes(scene.id)) st.scenes.push(scene.id);
+  const sid = scene.id || ("pack:" + (scene.title || "?"));
+  st.sceneCounts[sid] = (st.sceneCounts[sid] | 0) + 1;
+  if (scene.title && Object.keys(st.sceneTitles).length < 400) st.sceneTitles[sid] = String(scene.title).slice(0, 80);
   const daily = typeof sceneOfTheDay === "function" ? sceneOfTheDay() : null;
   if (daily && scene.id === daily.id) {
     const heute = localDayKey();
@@ -5711,6 +5773,7 @@ function achOnRoundDone() {
   achUnlock("first_round");
   if (myRoles().length >= 2) achUnlock("multi_role");
   if (scene.blind) achUnlock("blind");
+  if (match.chaos) achUnlock("chaos");
   if (packMode) achUnlock("local_pack");
   const h = new Date().getHours();
   if (h >= 0 && h < 4) achUnlock("night_owl");
@@ -5720,8 +5783,11 @@ function achOnRateResult(results) {
   if (!Array.isArray(results) || !results.length) return;
   const mine = results.find(r => r && r.id === myId);
   if (!mine) return;
-  if (results.length >= 2 && results[0].id === myId) achUnlock("best_voice");
+  const st = achData.stats;
+  if (results.length >= 2 && results[0].id === myId) { st.bestVoice++; achUnlock("best_voice"); }
   const stars = mine.avgStars != null ? mine.avgStars : mine.avg;
+  if (typeof stars === "number" && (mine.votes || 0) > 0 && stars >= 1 && stars <= 5) { st.starSum += stars; st.starN++; }
+  achSave();
   if (typeof stars === "number" && stars >= 4.999 && (mine.votes || 0) > 0) achUnlock("five_stars");
   if ((mine.buddies || 0) > 0) achUnlock("buddy");
 }
@@ -5730,15 +5796,15 @@ let achDuelWinsSession = 0;
 function achOnDuelResult(result) {
   if (!result || !duelInfo) return;
   const winId = result.winner === "a" ? duelInfo.aId : result.winner === "b" ? duelInfo.bId : null;
-  if (winId && winId === myId) { achDuelWinsSession++; achUnlock("duel_win"); }
+  if (winId && winId === myId) { achDuelWinsSession++; achData.stats.duelWins++; achSave(); achUnlock("duel_win"); }
 }
-function achOnTeamResult(won) { if (won) achUnlock("team_win"); }
+function achOnTeamResult(won) { if (won) { achData.stats.teamWins++; achSave(); achUnlock("team_win"); } }
 function achOnFinal(list, championName) {
   if (!Array.isArray(list) || !list.length) return;
   if (championName) {
     const me = players.find(p => p.id === myId);
     if (me && me.name === championName) achUnlock("survivor");
-  } else if (list[0] && list[0].id === myId && list.length >= 2) achUnlock("champion");
+  } else if (list[0] && list[0].id === myId && list.length >= 2) { achData.stats.matchWins++; achSave(); achUnlock("champion"); }
 }
 function achOnWins() { if ((mgWins[myId] || 0) > achDuelWinsSession) achUnlock("arena"); }
 
@@ -5847,6 +5913,126 @@ window.addEventListener("DOMContentLoaded", () => {
   let seen = false;
   try { seen = localStorage.getItem(TUT_KEY) === "1"; } catch {}
   if (!seen) openTutorial();
+});
+
+// ═════════════════════════════════════════════════════════════
+// MEIN PROFIL — Statistik aus den Erfolgs-Daten (pro Gerät)
+// ═════════════════════════════════════════════════════════════
+function profileFavoriteScene() {
+  const counts = achData.stats.sceneCounts || {};
+  let best = null, n = 0;
+  for (const [id, c] of Object.entries(counts)) if ((c | 0) > n) { best = id; n = c | 0; }
+  if (!best) return null;
+  const known = sceneList.find(s => s.id === best);
+  const title = known ? sceneTitleDisplay(known.title) : (achData.stats.sceneTitles[best] || best);
+  return { title, n };
+}
+function renderProfile() {
+  const box = $("profile-body");
+  if (!box) return;
+  const st = achData.stats;
+  const me = { name: myName || tt("You", "Du"), avatar: myAvatar, accessory: myAccessory };
+  const avg = st.starN ? (st.starSum / st.starN) : null;
+  const fav = profileFavoriteScene();
+  const nAch = Object.keys(achData.unlocked).filter(id => achDef(id)).length;
+  const tile = (ico, val, lbl, sub) => `<div class="prof-tile"><div class="prof-val">${ico} ${val}</div><div class="prof-lbl">${lbl}</div>${sub ? `<div class="prof-sub">${sub}</div>` : ""}</div>`;
+  const since = (() => { try { return new Date(st.since + "T12:00:00").toLocaleDateString(getLang() === "de" ? "de-DE" : "en-GB"); } catch { return st.since; } })();
+  box.innerHTML = `
+    <div class="prof-head">${avatarHTML(me)}<div><div class="prof-name">${esc(me.name)}</div><div class="tag">${tt("Playing since ", "Dabei seit ")}${esc(since)}</div></div></div>
+    <div class="prof-grid">
+      ${tile("🎬", st.rounds, tt("Rounds played", "Runden gespielt"))}
+      ${tile("🎙", st.takes, tt("Lines recorded", "Zeilen aufgenommen"))}
+      ${tile("🗂", st.scenes.length, tt("Different scenes", "Verschiedene Szenen"))}
+      ${tile("⭐", avg == null ? "–" : avg.toFixed(1), tt("Average stars", "Sterne-Schnitt"), st.starN ? st.starN + tt(" ratings", " Bewertungen") : tt("no rating yet", "noch keine Bewertung"))}
+      ${tile("🏆", st.bestVoice, tt("Best voice actor", "Bester Sprecher"))}
+      ${tile("👑", st.matchWins, tt("Matches won", "Matches gewonnen"))}
+      ${tile("🥊", st.duelWins, tt("Duels won", "Duelle gewonnen"))}
+      ${tile("⚔", st.teamWins, tt("Team battles won", "Team-Battles gewonnen"))}
+      ${tile("📅", st.dailyDays.length, tt("Days with scene of the day", "Tage mit Szene des Tages"))}
+    </div>
+    <div class="prof-fav"><span class="tag">❤️ ${tt("Favourite scene", "Lieblingsszene")}</span><br>${fav ? `<b>${esc(fav.title)}</b> <span class="tag">· ${fav.n}× ${tt("played", "gespielt")}</span>` : `<span class="sub">${tt("Play a few rounds first 🙂", "Erst mal ein paar Runden spielen 🙂")}</span>`}</div>
+    <button type="button" class="ghost" id="btn-prof-ach">🏅 ${tt("Achievements", "Erfolge")} · ${nAch}/${ACHIEVEMENTS.length}</button>`;
+  const b = $("btn-prof-ach");
+  if (b) b.onclick = () => { closeProfile(); openAchievements(); };
+}
+function openProfile() {
+  const o = $("profile-overlay");
+  if (!o) return;
+  renderProfile();
+  o.style.display = "flex";
+  try { SFX.click(); } catch {}
+  const c = $("btn-profile-close"); if (c) c.focus();
+}
+function closeProfile() { const o = $("profile-overlay"); if (o) o.style.display = "none"; }
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest && e.target.closest(".prof-open");
+  if (b) openProfile();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeProfile(); });
+window.addEventListener("DOMContentLoaded", () => {
+  const o = $("profile-overlay");
+  if (o) o.addEventListener("click", (e) => { if (e.target === o) closeProfile(); });
+  const c = $("btn-profile-close"); if (c) c.onclick = closeProfile;
+});
+
+// ═════════════════════════════════════════════════════════════
+// 🐞 PROBLEM MELDEN — sammelt die wichtigsten Infos als Text zum Kopieren und Verschicken
+// ═════════════════════════════════════════════════════════════
+function buildDiagReport() {
+  const safe = (fn, fb = "?") => { try { const v = fn(); return v == null || v === "" ? fb : v; } catch { return fb; } };
+  const me = safe(() => players.find(p => p.id === myId), null);
+  const roles = safe(() => myRoles().map(r => (roleOf(r) || {}).name || r).join(" + "), "–");
+  const conn = safe(() => navigator.connection ? (navigator.connection.effectiveType || "") + (navigator.connection.downlink ? " ~" + navigator.connection.downlink + " Mbit/s" : "") : "", "–");
+  const lines = [
+    "🐞 Synchronstudio – Problembericht",
+    "Zeit: " + new Date().toLocaleString("de-DE"),
+    "Version: " + APP_VERSION,
+    "Browser: " + navigator.userAgent,
+    "Gerät: Bildschirm " + safe(() => screen.width + "×" + screen.height) + ", Fenster " + innerWidth + "×" + innerHeight + ", Pixeldichte " + safe(() => devicePixelRatio) + ", Touch " + (safe(() => matchMedia("(pointer:coarse)").matches, false) ? "ja" : "nein"),
+    "Sprache: " + safe(() => getLang()) + " · Online: " + (navigator.onLine ? "ja" : "nein") + " · Netz: " + conn,
+    "Ansicht: " + safe(() => document.querySelector(".screen.active").id),
+    "Raum: " + (safe(() => raumCode, null) ? "ja" : "nein") + " · Host: " + (isHost ? "ja (Raum-Ersteller)" : safe(() => iAmLogicalHost(), false) ? "ja (weitergegeben)" : "nein")
+      + " · Spieler: " + safe(() => players.length, 0) + " (offline: " + safe(() => players.filter(p => p.offline).length, 0) + ")"
+      + " · Verbindung zum Host: " + (isHost ? "–" : safe(() => hostConn && hostConn.open, false) ? "offen" : "getrennt"),
+    "Modus: " + safe(() => match.mode) + " · Runde " + safe(() => match.round + "/" + match.rounds) + (safe(() => match.chaos, false) ? " · Chaos an" : ""),
+    "Szene: " + safe(() => scene ? (scene.id || "eigenes Video/Pack") + " – " + scene.title + " (" + ((scene.lines || []).length) + " Zeilen)" : null, "keine")
+      + " · Video geladen: " + safe(() => myVideoReady ? "ja" : (myLoadPct || 0) + " %"),
+    "Meine Rolle(n): " + roles + " · bereit: " + (me && me.ready ? "ja" : "nein") + " · Fortschritt: " + safe(() => (me.done || 0) + "/" + (me.total || 0), "–"),
+    "Mikro: " + safe(() => currentMicState()) + " · Audio: " + safe(() => audioCtx ? audioCtx.state : "noch nicht gestartet"),
+    "",
+    "Letzte Meldungen (" + diagLog.length + "):",
+    ...(diagLog.length ? diagLog.slice(-25) : ["– keine –"]),
+  ];
+  return lines.join("\n");
+}
+async function copyText(text, area) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  try { area.focus(); area.select(); return document.execCommand("copy"); } catch { return false; }
+}
+async function openBugReport() {
+  const o = $("bug-overlay"), area = $("bug-text");
+  if (!o || !area) return;
+  area.value = buildDiagReport();
+  o.style.display = "flex";
+  const ok = await copyText(area.value, area);
+  status("bug-status", ok
+    ? tt("✅ Copied! Paste it into WhatsApp/Discord and send it — and add one sentence about what happened.", "✅ Kopiert! Einfach in WhatsApp/Discord einfügen und abschicken — und kurz dazuschreiben, was passiert ist.")
+    : tt("Tap the text, select all and copy it.", "Text antippen, alles markieren und kopieren."), !ok);
+}
+function closeBugReport() { const o = $("bug-overlay"); if (o) o.style.display = "none"; }
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest && e.target.closest(".bug-open");
+  if (b) { const pn = $("patchnotes-overlay"); if (pn) pn.style.display = "none"; openBugReport(); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBugReport(); });
+window.addEventListener("DOMContentLoaded", () => {
+  const o = $("bug-overlay");
+  if (o) o.addEventListener("click", (e) => { if (e.target === o) closeBugReport(); });
+  if ($("btn-bug-close")) $("btn-bug-close").onclick = closeBugReport;
+  if ($("btn-bug-copy")) $("btn-bug-copy").onclick = async () => {
+    const ok = await copyText($("bug-text").value, $("bug-text"));
+    status("bug-status", ok ? tt("✅ Copied again.", "✅ Nochmal kopiert.") : tt("Copy didn't work — select the text and copy it by hand.", "Kopieren ging nicht — Text markieren und von Hand kopieren."), !ok);
+  };
 });
 
 // ═════════════════════════════════════════════════════════════
@@ -7008,9 +7194,46 @@ function hostSettingsChanged() {
   broadcastState();
 }
 function broadcastSettings() {
-  broadcast({ t: "settings", mode: match.mode, rounds: match.rounds, round: match.round, autoRoulette: match.autoRoulette, blind: !!(scene && scene.blind) });
+  broadcast({ t: "settings", mode: match.mode, rounds: match.rounds, round: match.round, autoRoulette: match.autoRoulette, blind: !!(scene && scene.blind), chaos: !!match.chaos, chaosSeed: match.chaosSeed | 0 });
   renderSettingsView();
 }
+
+// ═════════════════════════════════════════════════════════════
+// CHAOS-MODUS — jede Zeile bekommt einen zufälligen Stimmeffekt.
+// Der Host schaltet ihn in den Match-Einstellungen an (gilt für alle Modi). Welche Zeile
+// welchen Effekt bekommt, hängt an Szene + Zeile + einem Würfel-Wert, den der Host vor
+// jedem Start neu würfelt und mit den Einstellungen verschickt: im Team-Battle haben so
+// beide Teams für dieselbe Zeile denselben Effekt (fair), jede Runde ist aber neu.
+// ═════════════════════════════════════════════════════════════
+const CHAOS_EFFECTS = ["helium", "monster", "robot", "telefon", "radio", "underwater", "titan", "megaphone", "echo", "chorus", "vintage_1990", "tv", "pa"];
+function chaosEffectFor(idx) {
+  const key = (match.chaosSeed || 0) + "|" + ((scene && scene.id) || (scene && scene.title) || "") + "|" + idx;
+  return CHAOS_EFFECTS[hashStr(key) % CHAOS_EFFECTS.length];
+}
+function setChaos(on) {
+  if (!isHost) return;
+  match.chaos = !!on;
+  match.chaosSeed = (Math.random() * 1e9) | 0;
+  broadcastSettings();
+}
+/** Vor jedem Start neu würfeln — Einstellungen gehen vor „goLines“ über dieselbe Leitung raus. */
+function rerollChaos() {
+  if (!isHost || !match.chaos) return;
+  match.chaosSeed = (Math.random() * 1e9) | 0;
+  broadcastSettings();
+}
+function syncChaosToggle() {
+  const cb = $("set-chaos");
+  if (cb) cb.checked = !!match.chaos;
+}
+if ($("set-chaos")) $("set-chaos").onchange = () => {
+  if (!iAmLogicalHost()) { syncChaosToggle(); return; }
+  const on = $("set-chaos").checked;
+  try { SFX.click(); } catch {}
+  if (!isHost) { match.chaos = on; renderSettingsView(); sendHost({ t: "hostCmd", cmd: "chaos", on }); return; }
+  setChaos(on);
+};
+
 function renderSettingsView(s) {
   const el = $("settings-view");
   if (!el) return;
@@ -7031,6 +7254,8 @@ function renderSettingsView(s) {
   } else {
     el.innerHTML = `🎮 <b>${tt("Free play", "Freies Spiel")}</b> · ${tt("pick scene &amp; roles freely", "Szene &amp; Rollen frei wählbar")} · 🕶 ${tt("Blind", "Blind")}: ${onOff}` + (iAmLogicalHost() ? "" : ' <span class="tag">(Host)</span>');
   }
+  const chaos = s ? !!s.chaos : !!match.chaos;
+  if (chaos) el.innerHTML += ` · <b style="color:var(--amber)">🎲 ${tt("Chaos mode: random voice effect on every line", "Chaos-Modus: zufälliger Stimmeffekt pro Zeile")}</b>`;
 }
 function renderWins() {
   const el = $("mg-wins");
@@ -7251,6 +7476,7 @@ function startSession() {
     SFX.err(); return;
   }
   stopLobbyPreview();
+  rerollChaos();
   if (scene.lines?.length) { broadcast({ t: "goLines" }); startBooth(); }
   else { broadcast({ t: "go" }); startRealtime(); }
 }
@@ -7959,6 +8185,7 @@ $("btn-duel-start").onclick = () => {
   broadcast({ t: "duelSetupInfo", duelInfo });
   broadcastState();
   status("duel-setup-status", tt("🥊 Duel set: ", "🥊 Duell steht: ") + nameOf(aId) + " vs " + nameOf(bId) + tt(" as ", " als ") + duelStagedScene.roles.find(r => r.id === roleId).name + tt(" — waiting for the video download …", " — warte auf Video-Download …"));
+  rerollChaos();
   broadcast({ t: "goLines" });
   queueOrStartBooth();
 };
@@ -7985,6 +8212,7 @@ function startBooth() {
   const meineRollen = myRoles();
   myLines = scene.lines.map((l, i) => ({ ...l, idx: i })).filter(l => l.chars.some(c => meineRollen.includes(c)));
   curLine = 0; takes = {}; outtakes = []; myEffectOverrides = {}; myEffectAmounts = {}; myLineGains = {}; myLinePans = {};
+  if (match.chaos) myLines.forEach(l => { myEffectOverrides[l.idx] = chaosEffectFor(l.idx); });
   const r = roleOf(rid);
   $("booth-rolename").textContent = meineRollen.length > 1
     ? meineRollen.map(x => (roleOf(x) || {}).name || "?").join(" + ")
@@ -11343,6 +11571,7 @@ async function startTeamBattle(sceneId) {
   broadcast({ t: "teamInfo", teamInfo });
   broadcastState();
   status("team-setup-status", "⚔ " + teamLabel("a") + " (" + teamNames("a") + ") vs " + teamLabel("b") + " (" + teamNames("b") + ")");
+  rerollChaos();
   broadcast({ t: "goLines" });
   queueOrStartBooth();
 }
