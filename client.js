@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.4";
+const APP_VERSION = "9.25.5";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,6 +816,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.5", items: [
+    "🎬 Neue Szene: BLEACH — Ulquiorra What is a Heart"
+  ], itemsEn: [
+    "🎬 New scene: BLEACH — Ulquiorra What is a Heart"
+  ]},
   { v: "9.25.4", items: [
     "🇩🇪 Azumanga Daioh — Oh My Gah: deutsche Untertitel von Hand überarbeitet",
     "📦 Szenen-Import: auch Packs in verschachtelten Ordnern und Packs ohne Backing-Track (Originalstimmen werden dann stummgeschaltet)"
@@ -2073,6 +2078,8 @@ const AVATAR_CHARS = [
   { img: "scenes/reze_s_conspiracy_lesson/pochita.png", label: "Pochita · Chainsaw Man — Reze's Conspiracy Lesson" },
   { img: "scenes/azumanga_daioh_oh_my_gah/chiyo_chichi.png", label: "Chiyo-Chichi · Azumanga Daioh — Oh My Gah" },
   { img: "scenes/azumanga_daioh_oh_my_gah/ayumu_kasuga.png", label: "Ayumu Kasuga · Azumanga Daioh — Oh My Gah" },
+  { img: "scenes/bleach_ulquiorra_what_is_a_heart/ulquiorra.png", label: "Ulquiorra · BLEACH — Ulquiorra What is a Heart" },
+  { img: "scenes/bleach_ulquiorra_what_is_a_heart/orihime.png", label: "Orihime · BLEACH — Ulquiorra What is a Heart" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
