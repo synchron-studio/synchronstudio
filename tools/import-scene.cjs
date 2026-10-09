@@ -11,7 +11,7 @@
  *   3. erfolgreich importierte ZIPs werden gelöscht; fehlerhafte wandern nach
  *      _import/fehlgeschlagen/ — mit einer .txt daneben, die erklärt, was nicht passt
  *
- * Aufruf:  node tools/import-scene.cjs            (alle _import/*.zip)
+ * Aufruf:  node tools/import-scene.cjs            (alle _import/*.zip|rar|7z + Links aus _import/links.txt)
  *          node tools/import-scene.cjs a.zip b.zip
  * Exit-Code 1, wenn mindestens ein ZIP nicht importiert werden konnte.
  * Zusammenfassung (Markdown) geht nach stdout und — falls gesetzt — nach $GITHUB_STEP_SUMMARY.
@@ -35,15 +35,20 @@ const has = (cmd) => { try { cp.execFileSync(cmd, ['-version'], { stdio: 'ignore
 
 class ImportError extends Error {}
 
+const ARCHIVE_RE = /\.(zip|rar|7z)$/i;
+
 function extract(zipFile) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-import-'));
-  try {
-    cp.execFileSync('unzip', ['-qq', '-o', zipFile, '-d', dir], { stdio: 'pipe' });
-  } catch (e) {
-    // unzip meldet z. B. bei Warnungen Exit-Code 1, entpackt aber trotzdem
-    if (!fs.existsSync(path.join(dir, 'scene.json')) && !fs.readdirSync(dir).length) {
-      throw new ImportError('Das ZIP ließ sich nicht öffnen (beschädigt oder kein ZIP).');
-    }
+  const isZip = /\.zip$/i.test(zipFile);
+  // ZIP mit unzip; RAR/7z (so liegen viele GameBanana-Packs vor) mit 7z, sonst unar
+  const tries = isZip ? [['unzip', ['-qq', '-o', zipFile, '-d', dir]]]
+    : [['7z', ['x', '-y', '-bd', '-o' + dir, zipFile]], ['unar', ['-q', '-f', '-o', dir, zipFile]]];
+  for (const [cmd, args] of tries) {
+    try { cp.execFileSync(cmd, args, { stdio: 'pipe' }); break; } catch { /* nächstes Werkzeug / Warnung, prüfen unten */ }
+  }
+  // unzip meldet z. B. bei Warnungen Exit-Code 1, entpackt aber trotzdem
+  if (!fs.readdirSync(dir).length) {
+    throw new ImportError(`Das Archiv ließ sich nicht öffnen (beschädigt oder kein ${isZip ? 'ZIP' : 'RAR/7z'}).`);
   }
   // Liegt alles in einem Unterordner (z. B. „meine_szene/scene.json“ oder ein Choicer-Voicer-Pack
   // „Reze s Conspiracy Lesson/_pack_info.ini“)? Dann den nehmen.
@@ -541,19 +546,55 @@ function autoTranslate(lines, notes) {
   }
 }
 
+// _import/links.txt: GameBanana-Links (eine pro Zeile) → Dateien herunterladen und wie hochgeladene
+// Archive behandeln. Heruntergeladenes wird nie gespeichert (kann > 100 MB sein) — nur das Ergebnis.
+const LINKS_FILE = path.join(IMPORT_DIR, 'links.txt');
+function curl(args) {
+  return cp.execFileSync('curl', ['-fsSL', '--retry', '3', '-m', '600', '-A', 'Synchronstudio-Import', ...args], { maxBuffer: 1 << 26 });
+}
+function fetchLinks(failed) {
+  if (!fs.existsSync(LINKS_FILE)) return [];
+  const lines = fs.readFileSync(LINKS_FILE, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const out = [];
+  for (const line of lines) {
+    const m = line.match(/gamebanana\.com\/(?:mods|dl)\/(\d+)/i);
+    if (!m) { failed.push({ name: line, msg: 'Kein GameBanana-Link erkannt (erwartet z. B. https://gamebanana.com/mods/712967).' }); continue; }
+    const api = (process.env.SS_GB_API || 'https://gamebanana.com/apiv11') + `/Mod/${m[1]}?_csvProperties=_sName,_aFiles`;
+    try {
+      const info = JSON.parse(curl([api]).toString('utf8'));
+      const files = (info._aFiles || []).filter(f => ARCHIVE_RE.test(f._sFile || '') && f._sDownloadUrl);
+      if (!files.length) throw new ImportError(`Auf GameBanana gibt es zu „${info._sName || m[1]}“ keine ZIP/RAR/7z-Datei zum Herunterladen.`);
+      const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dl-'));
+      for (const f of files) {
+        const safe = path.basename(f._sFile).replace(/[^\w.\- ]+/g, '_');
+        const dest = path.join(dlDir, `${m[1]}_${f._idRow || out.length}_${safe}`);
+        curl(['-o', dest, f._sDownloadUrl]);
+        out.push({ zip: dest, name: `${info._sName || 'GameBanana ' + m[1]} (${safe})`, downloaded: dlDir });
+      }
+    } catch (e) {
+      const msg = e instanceof ImportError ? e.message : `Download von GameBanana fehlgeschlagen (${line}): ${String(e && e.message || e).split('\n')[0]}`;
+      failed.push({ name: `GameBanana ${m[1]}`, msg });
+    }
+  }
+  // Liste leeren — sonst würde jeder Lauf dieselben Packs nochmal holen
+  fs.rmSync(LINKS_FILE, { force: true });
+  return out;
+}
+
 function main() {
   const args = process.argv.slice(2);
-  const zips = args.length ? args.map(a => path.resolve(a))
-    : (fs.existsSync(IMPORT_DIR) ? fs.readdirSync(IMPORT_DIR).filter(n => /\.zip$/i.test(n)).map(n => path.join(IMPORT_DIR, n)) : []);
+  const preFailed = [];
+  const zips = args.length ? args.map(a => ({ zip: path.resolve(a), name: path.basename(a) }))
+    : [...(fs.existsSync(IMPORT_DIR) ? fs.readdirSync(IMPORT_DIR).filter(n => ARCHIVE_RE.test(n)).map(n => ({ zip: path.join(IMPORT_DIR, n), name: n })) : []),
+      ...fetchLinks(preFailed)];
   const summary = ['## 🎬 Szenen-Import', ''];
-  if (!zips.length) {
+  if (!zips.length && !preFailed.length) {
     summary.push('Keine ZIP-Dateien in `_import/` gefunden — nichts zu tun.');
     finish(summary, 0);
     return;
   }
-  const imported = [], failed = [];
-  for (const zip of zips) {
-    const name = path.basename(zip);
+  const imported = [], failed = preFailed;
+  for (const { zip, name, downloaded } of zips) {
     let tmp = null, extraCleanup = null;
     try {
       const ex = extract(zip);
@@ -579,10 +620,11 @@ function main() {
       imported.push({ zip, name, id: scene.id, title: scene.title, updated, lines: scene.lines.length, roles: scene.roles.length, notes, mb: videoBytes / 1048576 });
     } catch (e) {
       const msg = e instanceof ImportError ? e.message : ('Unerwarteter Fehler: ' + (e && e.message || e));
-      failed.push({ zip, name, msg });
+      failed.push({ zip, name, msg, downloaded: !!downloaded });
     } finally {
       if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
       if (extraCleanup) fs.rmSync(extraCleanup, { recursive: true, force: true });
+      if (downloaded) fs.rmSync(downloaded, { recursive: true, force: true });
     }
   }
   if (imported.length) {
@@ -600,15 +642,16 @@ function main() {
     fs.mkdirSync(FAILED_DIR, { recursive: true });
     summary.push('### ❌ Nicht eingebaut', '');
     for (const f of failed) {
-      if (inside(IMPORT_DIR, f.zip)) {
-        fs.renameSync(f.zip, path.join(FAILED_DIR, f.name));
-        fs.writeFileSync(path.join(FAILED_DIR, f.name.replace(/\.zip$/i, '') + ' - FEHLER.txt'),
-          `Diese Szene wurde NICHT eingebaut.\n\nGrund:\n${f.msg}\n\nNach dem Beheben das ZIP einfach nochmal in den Ordner _import/ hochladen.\n`);
+      const local = f.zip && inside(IMPORT_DIR, f.zip);
+      if (local) fs.renameSync(f.zip, path.join(FAILED_DIR, f.name));
+      if (local || !f.zip || f.downloaded) {
+        fs.writeFileSync(path.join(FAILED_DIR, f.name.replace(ARCHIVE_RE, '').replace(/[^\w.\-() ]+/g, '_').slice(0, 120) + ' - FEHLER.txt'),
+          `Diese Szene wurde NICHT eingebaut.\n\nGrund:\n${f.msg}\n\nNach dem Beheben das ZIP (bzw. den Link in _import/links.txt) einfach nochmal hochladen.\n`);
       }
       summary.push(`- **${f.name}**:`);
       for (const l of f.msg.split('\n')) summary.push(`  - ${l}`);
     }
-    summary.push('', 'Die fehlerhaften ZIPs liegen jetzt in `_import/fehlgeschlagen/` (mit einer FEHLER.txt daneben).');
+    summary.push('', 'Die Gründe stehen auch in `_import/fehlgeschlagen/` (fehlerhafte hochgeladene ZIPs liegen dort mit einer FEHLER.txt daneben).');
   }
   finish(summary, failed.length ? 1 : 0);
 }

@@ -81,3 +81,44 @@ z.close()`;
   assert.ok(fs.existsSync(path.join(tmp, '_import', 'fehlgeschlagen', 'default-name.zip')));
   assert.match(fs.readFileSync(path.join(tmp, '_import', 'fehlgeschlagen', 'default-name - FEHLER.txt'), 'utf8'), /Standardname/);
 });
+
+test('scene import: GameBanana links in _import/links.txt are downloaded and built in', async (t) => {
+  const os = require('node:os');
+  const http = require('node:http');
+  const { execFile } = require('node:child_process');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-import-gb-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  for (const f of ['scenes.json', 'scenes-index.json', 'client.js', 'index.html']) fs.copyFileSync(path.join(root, f), path.join(tmp, f));
+  fs.cpSync(path.join(root, 'scenedata'), path.join(tmp, 'scenedata'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'tools'));
+  for (const f of ['sync-scene-index.cjs', 'import-scene.cjs']) fs.copyFileSync(path.join(root, 'tools', f), path.join(tmp, 'tools', f));
+  fs.mkdirSync(path.join(tmp, '_import'));
+  const id = 'gbtest_scene';
+  const scene = { id, title: 'GB Test (1 Rolle)', videoUrl: `scenes/${id}.mp4`, avatars: {},
+    roles: [{ id: 0, name: 'Hero', pan: 0, effect: 'none', gain: 1 }],
+    lines: [{ t: 0.5, end: 2, chars: [0], who: 'Hero', text: 'Hi', de: 'Hallo' }] };
+  const zipPath = path.join(tmp, 'pack.zip');
+  execFileSync('python3', ['-c', `import zipfile,sys
+z=zipfile.ZipFile(sys.argv[1],'w')
+z.writestr('Pack/scene.json', sys.argv[2])
+z.writestr('Pack/scenes/${id}.mp4', b'x'*2048)
+z.writestr('Pack/previews/${id}.mp4', b'p'*1024)
+z.close()`, zipPath, JSON.stringify(scene)]);
+  const srv = http.createServer((req, res) => {
+    if (req.url.startsWith('/api/Mod/111')) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ _sName: 'GB Test', _aFiles: [{ _idRow: 5, _sFile: 'gb_test.zip', _sDownloadUrl: `http://127.0.0.1:${srv.address().port}/dl/5` }, { _idRow: 6, _sFile: 'readme.txt', _sDownloadUrl: 'x' }] })); }
+    if (req.url === '/dl/5') return res.end(fs.readFileSync(zipPath));
+    res.statusCode = 404; res.end();
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  fs.writeFileSync(path.join(tmp, '_import', 'links.txt'), 'https://gamebanana.com/mods/111\nhttps://example.com/nope\n');
+  const code = await new Promise(r => execFile(process.execPath, [path.join(tmp, 'tools', 'import-scene.cjs')],
+    { cwd: tmp, env: { ...process.env, SS_ROOT: tmp, SS_NO_TRANSLATE: '1', SS_GB_API: `http://127.0.0.1:${srv.address().port}/api`, GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '' } },
+    (e) => r(e ? e.code : 0)));
+  assert.equal(code, 1, 'the bad link makes the run red');
+  const scenes = JSON.parse(fs.readFileSync(path.join(tmp, 'scenes.json'), 'utf8'));
+  assert.ok(scenes.some(s => s.id === id && s.imported), 'downloaded pack built in');
+  assert.ok(fs.existsSync(path.join(tmp, 'scenes', id + '.mp4')));
+  assert.ok(!fs.existsSync(path.join(tmp, '_import', 'links.txt')), 'link list cleared');
+  assert.ok(!fs.readdirSync(path.join(tmp, '_import', 'fehlgeschlagen')).some(n => /\.zip$/i.test(n)), 'downloads are never stored in the repo');
+});

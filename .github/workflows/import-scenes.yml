@@ -1,5 +1,5 @@
-# Szenen automatisch einbauen: ZIP aus dem Szenen-Editor („Export Scene (.zip)“) auf GitHub
-# in den Ordner _import/ hochladen → dieser Ablauf prüft das ZIP, baut die Szene ein,
+# Szenen automatisch einbauen: ZIP aus dem Szenen-Editor („Export Scene (.zip)“) oder Choicer-Voicer-Pack
+# (ZIP/RAR/7z) in den Ordner _import/ hochladen — oder GameBanana-Links in _import/links.txt eintragen → dieser Ablauf prüft das ZIP, baut die Szene ein,
 # testet alles, speichert die Änderung und veröffentlicht die Website neu.
 # Klappt etwas nicht, steht der Grund in der Zusammenfassung dieses Laufs und in
 # _import/fehlgeschlagen/<name> - FEHLER.txt.
@@ -8,7 +8,7 @@ name: Szenen importieren
 on:
   push:
     branches: [main]
-    paths: ['_import/*.zip', '_import/*.ZIP']
+    paths: ['_import/*.zip', '_import/*.ZIP', '_import/*.rar', '_import/*.7z', '_import/links.txt']
   workflow_dispatch:
 
 permissions:
@@ -36,7 +36,8 @@ jobs:
       - name: Werkzeuge
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null)
+          # ffmpeg für Videos; 7z/unar für RAR- und 7z-Packs (GameBanana)
+          (command -v ffmpeg && command -v 7z && command -v unar) >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg p7zip-full unar >/dev/null)
 
       - name: Szenen einbauen
         id: import
