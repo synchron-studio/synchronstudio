@@ -3,7 +3,7 @@
 //         ONLY=team3,duel node scenarios.cjs
 const path = require('path');
 const H = require('./harness.cjs');
-const ALL = 'chaos,chaosteam,profile,free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,ownvideo,ttt';
+const ALL = 'chaos,chaosteam,profile,free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,dropdone,ownvideo,ttt';
 const which = (process.env.ONLY || ALL).split(',');
 const results = [];
 async function scenario(name, fn) {
@@ -353,6 +353,34 @@ async function freeRound(ps, host, sceneId, roles) {
     const guestScreen = await H.screen(ps[1]);
     const res = await H.playNormalRound(ps, host);
     return { sawOffline, guestScreenAfterReconnect: guestScreen, res };
+  });
+  // Wer schon fertig aufgenommen hat und kurz rausfliegt (Seite neu geladen), darf NICHT nochmal aufnehmen müssen
+  await scenario('dropdone', async (b, reg) => {
+    const { ps, host } = await H.room(b, 3); reg(ps);
+    await H.hostLoadScene(host, 'ghostweight');   // 3 Rollen
+    for (const p of ps.slice(1)) await p.waitForFunction(() => scene && scene.id, null, { timeout: 20000 });
+    for (const [i, p] of ps.entries()) await H.pickRole(p, i);
+    for (const p of ps) await H.ready(p);
+    await H.hostStart(host);
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-booth', 60000)));
+    await H.booth(ps[1], 1); await H.booth(ps[2], 1);
+    await Promise.all([H.waitScreen(ps[1], 'scr-wait', 30000), H.waitScreen(ps[2], 'scr-wait', 30000)]);
+    await host.waitForFunction(() => collected.size === 2, null, { timeout: 30000 });
+    const code = await host.evaluate(() => raumCode);
+    await ps[2].reload();
+    await H.onboard(ps[2], 'Spieler2');
+    await ps[2].fill('#in-code', code);
+    await ps[2].click('#btn-join');
+    await host.waitForFunction(() => players.length === 3 && !players.some(p => p.offline), null, { timeout: 90000 });
+    await ps[2].waitForFunction(() => ['scr-wait', 'scr-booth'].includes(document.querySelector('.screen.active')?.id), null, { timeout: 60000 });
+    await H.sleep(1500);
+    const afterRejoin = await H.screen(ps[2]);
+    if (afterRejoin !== 'scr-wait') throw new Error('Rückkehrer muss neu aufnehmen: ' + afterRejoin);
+    const waitText = await ps[2].textContent('#wait-status');
+    await H.booth(host, 1);
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-playback', 90000)));
+    const roles = await host.evaluate(() => [...collected.keys()].sort().join(','));
+    return { afterRejoin, waitText, roles };
   });
   await scenario('ownvideo', async (b, reg) => {
     const { ps, host } = await H.room(b, 2); reg(ps);

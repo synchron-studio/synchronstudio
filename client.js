@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.6";
+const APP_VERSION = "9.25.7";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,6 +816,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.25.7", items: [
+    "🔌 Fix: Wer schon fertig aufgenommen hat und kurz die Verbindung verliert, muss nicht mehr alles neu aufnehmen — die Takes sind ja schon beim Host"
+  ], itemsEn: [
+    "🔌 Fix: if you already finished recording and briefly lose connection, you no longer have to re-record everything — your takes are already with the host"
+  ]},
   { v: "9.25.6", items: [
     "🎬 Neue Szene: Erwin's Speech"
   ], itemsEn: [
@@ -4851,6 +4856,16 @@ function idUmschreiben(alt, neu) {
   if (dice) { dice.p = ausListe(dice.p); ausObj(dice.rolls); }
 }
 
+// Hat dieser Spieler seine Takes schon beim Host abgegeben? Dann darf ihn ein kurzer
+// Verbindungsabbruch NICHT zurück in die Aufnahme werfen — seine Spuren sind ja schon da.
+function takesSchonAbgegeben(p) {
+  if (!p) return false;
+  if (match.mode === "duell" && duelInfo) return !!duelSubs[p.id];
+  if (match.mode === "team" && teamInfo) return !!teamSubs[p.id];
+  const rollen = rolesOfPlayer(p);
+  return rollen.length > 0 && rollen.every(r => collected.has(r));
+}
+
 // In welcher Phase steckt die Runde gerade? Braucht ein Wiederkehrer, der die Seite
 // zwischendurch neu geladen hat und deshalb nichts mehr weiß.
 function aktuellePhase() {
@@ -4989,6 +5004,11 @@ function applyPhaseRestore(msg) {
         status("play-status", tt("🔌 Back in — premiere is running …", "🔌 Wieder drin — Premiere läuft …"));
       }
     }).catch(e => console.warn("Rejoin-Premiere:", e));
+  } else if (msg.phase === "scr-booth" && msg.takesDone) {
+    // Eigene Takes liegen schon beim Host → nicht nochmal aufnehmen, nur auf die anderen warten
+    show("scr-wait");
+    renderBoothPlayers();
+    status("wait-status", tt("🔌 Back in — your takes are already in! Waiting for the others …", "🔌 Wieder drin — deine Takes sind schon da! Warte auf die anderen …"));
   } else if (msg.phase === "scr-booth") {
     if (msg.role != null && scene) {
       queueOrStartBooth();
@@ -5087,7 +5107,7 @@ function handleMsg(msg, conn) {
         // players direkt im rejoined — nach Host-Wechsel sonst oft leere Liste beim Ex-Host
         conn.send({
           t: "rejoined", phase: aktuellePhase(), role: rueck.role,
-          forceRestore: true,
+          forceRestore: true, takesDone: takesSchonAbgegeben(rueck),
           scene: scene || null,
           players,
           logicalHostKey,
