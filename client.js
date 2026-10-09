@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.2";
+const APP_VERSION = "9.26.3";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -832,6 +832,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.3", items: [
+    "🎬 Neue Szene: Chainsaw man funny momments"
+  ], itemsEn: [
+    "🎬 New scene: Chainsaw man funny momments"
+  ]},
   { v: "9.26.2", items: [
     "🎬 Neue Szene: Death note- Youre god"
   ], itemsEn: [
@@ -2188,6 +2193,12 @@ const AVATAR_CHARS = [
   { img: "scenes/death_note_youre_god/matsuda.png", label: "Matsuda · Death note- Youre god" },
   { img: "scenes/death_note_youre_god/hideki_ide.png", label: "Hideki Ide · Death note- Youre god" },
   { img: "scenes/death_note_youre_god/takada.png", label: "Takada · Death note- Youre god" },
+  { img: "scenes/chainsaw_man_funny_momments/makima.png", label: "Makima · Chainsaw man funny momments" },
+  { img: "scenes/chainsaw_man_funny_momments/denji.png", label: "Denji · Chainsaw man funny momments" },
+  { img: "scenes/chainsaw_man_funny_momments/aki.png", label: "Aki · Chainsaw man funny momments" },
+  { img: "scenes/chainsaw_man_funny_momments/power.png", label: "Power · Chainsaw man funny momments" },
+  { img: "scenes/chainsaw_man_funny_momments/hirokazu.png", label: "Hirokazu · Chainsaw man funny momments" },
+  { img: "scenes/chainsaw_man_funny_momments/himeno.png", label: "Himeno · Chainsaw man funny momments" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
