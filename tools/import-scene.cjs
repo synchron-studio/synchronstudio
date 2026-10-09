@@ -349,7 +349,9 @@ function slugify(t, max = 40) {
 function cleanCaption(c) {
   let t = String(c || '');
   // Manche Packs schreiben den Sprecher davor: „[Isagi] "Text"“ — der Name steht im Spiel ohnehin daneben
-  t = t.replace(/^\s*\[[^\]]{1,60}\]\s*/, '');
+  // (auch kaputt zitiert: „"[Light] "Text“)
+  t = t.replace(/^\s*["“]?\s*\[[^\]]{1,60}\]\s*/, '');
+  if ((t.match(/"/g) || []).length % 2 === 1) t = t.replace(/^\s*"/, '').replace(/"\s*$/, '');
   t = t.replace(/\(\s*VFX:[^)]*\)/gi, ' ');
   // „(Guessing (VFX …)“ → nach dem Entfernen offene Klammer schließen
   const open = (t.match(/\(/g) || []).length, close = (t.match(/\)/g) || []).length;
