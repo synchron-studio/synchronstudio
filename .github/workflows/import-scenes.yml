@@ -23,7 +23,7 @@ jobs:
   import:
     runs-on: ubuntu-latest
     # Lange Packs (z. B. ein 44-Minuten-Kampf) brauchen zum Umwandeln deutlich länger
-    timeout-minutes: 150
+    timeout-minutes: 355
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -52,7 +52,15 @@ jobs:
         id: import
         # Fehler einzelner ZIPs erst am Ende melden — die anderen sollen trotzdem rein
         continue-on-error: true
-        run: node tools/import-scene.cjs
+        env:
+          # Jede fertige Szene sofort speichern + veröffentlichen; nach 4 h Rest-Links auf den nächsten Lauf schieben
+          SS_COMMIT_EACH: '1'
+          SS_TIME_BUDGET_MIN: '240'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Szenen-Import"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node tools/import-scene.cjs
 
       # Neue Dateien vormerken — der Szenen-Test prüft die Dateiliste von Git
       - name: Spiel testen
@@ -84,6 +92,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run deploy-pages.yml --ref main --repo "${{ github.repository }}"
+
+      # Links, für die die Zeit nicht mehr gereicht hat → nächsten Lauf starten
+      - name: Weiter importieren
+        if: hashFiles('_import/links.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run import-scenes.yml --ref main --repo "${{ github.repository }}"
 
       - name: Ergebnis
         if: steps.import.outcome == 'failure'

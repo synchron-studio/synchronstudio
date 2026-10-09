@@ -472,12 +472,13 @@ function buildCvScene({ dir, metas, allMetas, a, b, id, rawTitle, avatarDir, vid
     } else { audioIn = ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']; audioMap = '1:a:0'; }
     const rate = maxKbps ? ['-maxrate', `${maxKbps}k`, '-bufsize', `${maxKbps * 2}k`] : [];
     ffmpegRun([...seek, '-i', videoSrc, ...audioIn, '-map', '0:v:0', '-map', audioMap, '-t', len.toFixed(3),
-      '-vf', `scale='min(${width},iw)':-2`, '-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf), ...rate, '-pix_fmt', 'yuv420p',
+      '-vf', `scale='min(${width},iw)':-2`, '-c:v', 'libx264', '-preset', long ? 'veryfast' : 'fast', '-crf', String(crf), ...rate, '-pix_fmt', 'yuv420p',
       '-af', af, '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', mp4], 'Das Video');
   };
   // Obergrenze, damit die Datei sicher unter GitHubs 100 MB bleibt (mit Reserve)
   const capKbps = Math.max(350, Math.min(4000, Math.floor((88 * 1048576 * 8 / len - 128000) / 1000)));
   if (long) {
+    progress(`Wandle ${rawTitle} um (${Math.round(len / 60)} min Video)`);
     encode(1280, 23, capKbps);
   } else {
     encode(1280, 27);
@@ -655,12 +656,14 @@ function fetchLinks(failed, summary) {
         throw new ImportError(`Auf GameBanana gibt es zu „${info._sName || m[1]}“ keine ZIP/RAR/7z-Datei zum Herunterladen.` + (alt.length ? ` Die Datei liegt woanders: ${alt.join(' ')}` : ''));
       }
       const name = info._sName || 'GameBanana ' + m[1];
+      const totalMb = files.reduce((n, f) => n + (f._nFilesize || 0), 0) / 1048576;
       // Erst beim Verarbeiten laden (spart Platz: nie alle Mods gleichzeitig auf der Platte).
       // Alle Dateien eines Mods landen im selben Ordner — so findet 7z die Teile mehrteiliger Archive.
-      out.push({ name, prepare: () => {
+      out.push({ name, link: line, totalMb, prepare: () => {
         const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dl-'));
         for (const f of files) {
           const safe = path.basename(f._sFile).replace(/[^\w.\- ]+/g, '_');
+          progress(`Lade ${f._sFile} (${((f._nFilesize || 0) / 1048576).toFixed(0)} MB) — ${name}`);
           try { curl(['-o', path.join(dlDir, safe), f._sDownloadUrl]); }
           catch (e) { throw new ImportError(`Download von ${f._sFile} (${((f._nFilesize || 0) / 1048576).toFixed(0)} MB) fehlgeschlagen: ${String(e.stderr || e.message).trim().split('\n').pop().slice(0, 200)}`); }
         }
@@ -675,10 +678,49 @@ function fetchLinks(failed, summary) {
   }
   // Liste leeren — sonst würde jeder Lauf dieselben Packs nochmal holen
   fs.rmSync(LINKS_FILE, { force: true });
-  return out;
+  // Kleine Mods zuerst: die sind schnell drin, das 44-Minuten-Monster kommt zuletzt
+  return out.sort((x, y) => x.totalMb - y.totalMb);
+}
+
+/** Fortschritt im GitHub-Log sichtbar machen (erscheint als Hinweis am Lauf, auch wenn er abbricht). */
+function progress(msg) {
+  const t = new Date().toISOString().slice(11, 19);
+  if (process.env.GITHUB_ACTIONS) console.log(`::notice title=Szenen-Import ${t}::${msg.replace(/[\r\n]+/g, ' ')}`);
+  else console.log(`[${t}] ${msg}`);
+}
+/**
+ * SS_COMMIT_EACH=1 (GitHub): jede fertig eingebaute Szene sofort testen, speichern und veröffentlichen.
+ * Sonst ginge bei einem Abbruch (Zeitlimit) alles verloren, was bis dahin schon fertig war.
+ */
+function commitNow(batch) {
+  const run = (cmd, args) => cp.execFileSync(cmd, args, { cwd: ROOT, stdio: 'inherit' });
+  cp.execFileSync(process.execPath, [path.join(ROOT, 'tools', 'sync-scene-index.cjs')], { cwd: ROOT, stdio: 'inherit' });
+  const v = bumpVersion(batch);
+  run('git', ['add', '-A']);
+  try { run('npm', ['test', '--silent']); }
+  catch (e) {
+    // Test rot → diese Szenen wieder raus, Rest bleibt unberührt
+    run('git', ['reset', '-q', '--hard', 'HEAD']);
+    run('git', ['clean', '-fdq', '--', 'scenes', 'previews', 'scenedata']);
+    fs.rmSync(LINKS_FILE, { force: true });
+    throw new ImportError('Nach dem Einbauen schlug der Spiel-Test fehl — die Szene wurde wieder entfernt.');
+  }
+  run('git', ['-c', 'user.name=Szenen-Import', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+    'commit', '-q', '-m', `Szenen-Import: ${batch.map(x => x.id).join(', ')}`]);
+  let pushed = false;
+  for (let i = 0; i < 3 && !pushed; i++) {
+    try { run('git', ['pull', '-q', '--rebase', 'origin', 'main']); run('git', ['push', '-q', 'origin', 'HEAD:main']); pushed = true; }
+    catch { cp.execFileSync('sleep', ['5']); }
+  }
+  if (!pushed) throw new Error('Speichern auf GitHub (git push) fehlgeschlagen');
+  try { run('gh', ['workflow', 'run', 'deploy-pages.yml', '--ref', 'main']); } catch { /* Website kommt spätestens am Ende */ }
+  progress(`Gespeichert & veröffentlicht (Version ${v}): ${batch.map(x => plainTitle(x.title)).join(', ')}`);
+  return v;
 }
 
 function main() {
+  const t0 = Date.now();
+  const budgetMin = +process.env.SS_TIME_BUDGET_MIN || 0;
   const args = process.argv.slice(2);
   const preFailed = [];
   const summary = ['## 🎬 Szenen-Import', ''];
@@ -736,8 +778,22 @@ function main() {
       if (ex) fs.rmSync(ex.cleanup, { recursive: true, force: true });
     }
   };
+  const commitEach = !!process.env.SS_COMMIT_EACH;
+  let versionNow = null;
+  const flush = () => {
+    const batch = imported.filter(x => !x.committed);
+    if (!commitEach || !batch.length) return;
+    try { versionNow = commitNow(batch); batch.forEach(x => { x.committed = true; x.version = versionNow; }); }
+    catch (e) {
+      for (const x of batch) { imported.splice(imported.indexOf(x), 1); failed.push({ zip: x.zip, name: x.name, msg: e.message, downloaded: true }); }
+    }
+  };
+  const leftover = [];
   for (const job of zips) {
-    if (!job.prepare) { processArchive(job.zip, job.name, null); continue; }
+    // Zeit fast um → restliche Links für den nächsten Lauf aufheben (der Ablauf startet ihn selbst)
+    if (budgetMin && job.link && (Date.now() - t0) / 60000 > budgetMin) { leftover.push(job.link); continue; }
+    progress(`Starte: ${job.name}${job.totalMb ? ` (${job.totalMb.toFixed(0)} MB)` : ''}`);
+    if (!job.prepare) { processArchive(job.zip, job.name, null); flush(); continue; }
     let dl = null;
     try {
       dl = job.prepare();
@@ -748,10 +804,19 @@ function main() {
     } finally {
       if (dl) fs.rmSync(dl.dlDir, { recursive: true, force: true });
     }
+    flush();
+  }
+  if (leftover.length) {
+    fs.writeFileSync(LINKS_FILE, leftover.join('\n') + '\n');
+    summary.push(`⏳ Zeit für diesen Lauf aufgebraucht — ${leftover.length} Link(s) kommen im nächsten Lauf dran (startet automatisch).`, '');
   }
   if (imported.length) {
-    cp.execFileSync(process.execPath, [path.join(ROOT, 'tools', 'sync-scene-index.cjs')], { cwd: ROOT, stdio: 'inherit' });
-    const v = bumpVersion(imported);
+    const rest = imported.filter(x => !x.committed);
+    let v = versionNow;
+    if (rest.length) {
+      cp.execFileSync(process.execPath, [path.join(ROOT, 'tools', 'sync-scene-index.cjs')], { cwd: ROOT, stdio: 'inherit' });
+      v = bumpVersion(rest);
+    }
     for (const x of imported) if (inside(IMPORT_DIR, x.zip)) fs.rmSync(x.zip, { force: true });
     summary.push(`### ✅ Eingebaut (Version ${v})`, '');
     for (const x of imported) {
