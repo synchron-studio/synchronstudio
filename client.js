@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.1";
+const APP_VERSION = "9.26.2";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -832,6 +832,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.2", items: [
+    "🎬 Neue Szene: Death note- Youre god"
+  ], itemsEn: [
+    "🎬 New scene: Death note- Youre god"
+  ]},
   { v: "9.26.1", items: [
     "🎬 Neue Szene: Isagis First Goal"
   ], itemsEn: [
@@ -2176,6 +2181,13 @@ const AVATAR_CHARS = [
   { img: "scenes/isagis_first_goal/bachira.png", label: "Bachira · Isagis First Goal" },
   { img: "scenes/isagis_first_goal/gagamaru.png", label: "Gagamaru · Isagis First Goal" },
   { img: "scenes/isagis_first_goal/igarashi.png", label: "Igarashi · Isagis First Goal" },
+  { img: "scenes/death_note_youre_god/teru_mikami.png", label: "Teru Mikami · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/light_yagami.png", label: "Light Yagami · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/koshi.png", label: "Koshi · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/tv_announcer.png", label: "TV announcer · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/matsuda.png", label: "Matsuda · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/hideki_ide.png", label: "Hideki Ide · Death note- Youre god" },
+  { img: "scenes/death_note_youre_god/takada.png", label: "Takada · Death note- Youre god" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
