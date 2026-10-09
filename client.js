@@ -12739,12 +12739,24 @@ function resetPremPlayerGains() {
 }
 function bufferRms(buffer) {
   if (!buffer) return 0;
-  let sum = 0, n = 0;
-  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    const d = buffer.getChannelData(ch);
-    for (let i = 0; i < d.length; i++) { const x = d[i]; sum += x * x; n++; }
+  // In 20-ms-Fenstern messen und nur die Fenster mit Stimme zählen (lauter als −45 dB bzw.
+  // als ein Zehntel des lautesten Fensters). Vorher zählte die Stille vor/nach dem Satz mit —
+  // wer kurz sprach und lange wartete, wurde viel zu laut „ausgeglichen“.
+  const win = Math.max(1, Math.round(buffer.sampleRate * 0.02));
+  const chans = [];
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) chans.push(buffer.getChannelData(ch));
+  const wins = [];
+  for (let s0 = 0; s0 < buffer.length; s0 += win) {
+    let sum = 0, n = 0;
+    for (const d of chans) for (let i = s0; i < Math.min(buffer.length, s0 + win); i++) { sum += d[i] * d[i]; n++; }
+    wins.push(n ? sum / n : 0);
   }
-  return n ? Math.sqrt(sum / n) : 0;
+  if (!wins.length) return 0;
+  const peak = Math.max(...wins);
+  const floor = Math.max(3.16e-5, peak * 0.01);   // Energie: −45 dBFS bzw. 20 dB unter dem lautesten Fenster
+  const voiced = wins.filter(e => e >= floor);
+  if (!voiced.length) return 0;
+  return Math.sqrt(voiced.reduce((a, b) => a + b, 0) / voiced.length);
 }
 /** Pro Rolle: gewichteter RMS über alle Voicelines (inkl. Booth-Boost). */
 function computeRoleVoiceLevels() {
@@ -12971,6 +12983,7 @@ function premPauseAll(fromHostClick, syncT) {
 
 function premResumeAll(fromHostClick, syncT) {
   premPaused = false;
+  premStalled = false;
   const ctx = getCtx();
   const v = $("play-video");
   try {
@@ -13116,6 +13129,7 @@ function elementSource(ctx, v) {
 // (Vorher wurde pro "Nochmal abspielen" ein neuer Kompressor gebaut und der
 //  Video-Ton blieb mit ALLEN alten verbunden → wurde immer lauter. Gefixt.)
 let premNodes = null;
+let premSyncGen = 0, premStalled = false;
 const premVol = { master: 1, voice: 1, video: 1 };
 function premGraph(ctx, v) {
   if (!premNodes) {
@@ -13126,13 +13140,35 @@ function premGraph(ctx, v) {
     const voiceGain = ctx.createGain();
     const vidGain = ctx.createGain();
     const hearGain = ctx.createGain();
+    // Schutz-Limiter ganz am Ende: Master-Regler bis 150 %, viele Stimmen gleichzeitig oder
+    // laute Effekte übersteuerten vorher hörbar (Kratzen) — im Mitschnitt genauso.
+    const out = makeLimiter(ctx);
     voiceGain.connect(comp); vidGain.connect(comp);
-    comp.connect(masterGain); masterGain.connect(hearGain); hearGain.connect(ctx.destination);
+    comp.connect(masterGain); masterGain.connect(out); out.connect(hearGain); hearGain.connect(ctx.destination);
     elementSource(ctx, v).connect(vidGain);
-    premNodes = { comp, masterGain, voiceGain, vidGain, hearGain };
+    premNodes = { comp, masterGain, voiceGain, vidGain, hearGain, out };
     applyPremVol();
   }
   return premNodes;
+}
+function makeLimiter(ctx) {
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -1.5; lim.knee.value = 0; lim.ratio.value = 20;
+  lim.attack.value = 0.002; lim.release.value = 0.12;
+  return lim;
+}
+/** Kurze Ein-/Ausblende pro Stimme: hartes Abschneiden am Zeilen-Ende knackte hörbar. */
+function lineEnvelope(ctx, src, when, durReal) {
+  const env = ctx.createGain();
+  const fadeIn = 0.006, fadeOut = Math.min(0.03, Math.max(0.005, durReal / 4));
+  try {
+    env.gain.setValueAtTime(0, when);
+    env.gain.linearRampToValueAtTime(1, when + fadeIn);
+    env.gain.setValueAtTime(1, Math.max(when + fadeIn, when + durReal - fadeOut));
+    env.gain.linearRampToValueAtTime(0, when + durReal);
+  } catch { env.gain.value = 1; }
+  src.connect(env);
+  return env;
 }
 function applyPremVol() {
   if (!premNodes) return;
@@ -13181,9 +13217,17 @@ async function exportAudioFast() {
     const lastEnd = Math.max(1, fromLines, fromMix, fromVid) + 1.5;
     const offlineCtx = new OfflineCtor(2, Math.ceil(lastEnd * 44100), 44100);
 
-    const master = offlineCtx.createDynamicsCompressor();
-    master.threshold.value = -18; master.knee.value = 20; master.ratio.value = 4; master.attack.value = 0.005; master.release.value = 0.15;
-    master.connect(offlineCtx.destination);
+    // Gleicher Aufbau wie die Premiere: Stimmen-/Video-/Gesamt-Regler, Kompressor, Limiter.
+    // Vorher ignorierte der Ton-Export alle Regler (z. B. leiser gedrehte Musik).
+    const comp = offlineCtx.createDynamicsCompressor();
+    const tweaked = Object.values(premPlayerGains).some(g => Math.abs(Number(g) - 1) > 0.02);
+    if (tweaked) { comp.threshold.value = 0; comp.knee.value = 0; comp.ratio.value = 1; }
+    else { comp.threshold.value = -18; comp.knee.value = 20; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.15; }
+    const mGain = offlineCtx.createGain(); mGain.gain.value = premVol.master;
+    const lim = makeLimiter(offlineCtx);
+    comp.connect(mGain); mGain.connect(lim); lim.connect(offlineCtx.destination);
+    const master = offlineCtx.createGain(); master.gain.value = premVol.voice; master.connect(comp);
+    const vidG = offlineCtx.createGain(); vidG.gain.value = premVol.video; vidG.connect(comp);
 
     // Video-eigene Tonspur (Musik/SFX) mit reinrechnen
     try {
@@ -13191,7 +13235,7 @@ async function exportAudioFast() {
       const videoAudio = await offlineCtx.decodeAudioData(videoBuf.slice(0));
       const vSrc = offlineCtx.createBufferSource();
       vSrc.buffer = videoAudio;
-      vSrc.connect(master);
+      vSrc.connect(vidG);
       vSrc.start(0);
     } catch (e) { console.warn("Video-Ton nicht verfügbar für Offline-Export:", e); }
 
@@ -13213,7 +13257,6 @@ async function exportAudioFast() {
       src.buffer = item.buffer;
       const rate = effectPitch(role.effect);
       src.playbackRate.value = rate;
-      connectChain(src, offlineCtx, role, master);
       let maxDur = item.buffer.duration;
       if (scene.lines && item.lineIdx != null) {
         const l = scene.lines[item.lineIdx];
@@ -13227,6 +13270,7 @@ async function exportAudioFast() {
         maxDur = Math.min(maxDur, windowSec * rate);
       }
       const when = Math.max(0, item.startAt + syncOffsetMs / 1000);
+      connectChain(src, offlineCtx, role, master, lineEnvelope(offlineCtx, src, when, maxDur / rate));
       src.start(when, 0, maxDur);
     }
 
@@ -13630,13 +13674,7 @@ async function playMixInternal(opts) {
   updatePremPauseBtn();
 
   const g = premGraph(ctx, v);
-  // Quiet: Lautsprecher stumm (Gain 0), Recorder hängt weiter am masterGain — wie Outtakes
-  if (!g.hearGain) {
-    try { g.masterGain.disconnect(ctx.destination); } catch {}
-    g.hearGain = ctx.createGain();
-    g.masterGain.connect(g.hearGain);
-    g.hearGain.connect(ctx.destination);
-  }
+  // Quiet: Lautsprecher stumm (Gain 0), Recorder hängt weiter am Ausgang — wie Outtakes
   g.hearGain.gain.value = quiet ? 0 : 1;
   const master = g.voiceGain;          // Stimmen laufen über den Voice-Regler in den Graph
   clearPremPlayerGainNodes();          // frische Per-Spieler-Gains für diesen Lauf
@@ -13650,13 +13688,13 @@ async function playMixInternal(opts) {
     premCacheGen++;
     myGen = premCacheGen;
     const dest = ctx.createMediaStreamDestination();
-    g.masterGain.connect(dest);
+    g.out.connect(dest);
 
     // Bildquelle: Video Bild für Bild auf eine Leinwand malen und DIESE aufnehmen.
     // Der direkte Weg über video.captureStream() liefert auf manchen Rechnern nur
     // Schwarzbild (Hardware-Dekoder/Grafiktreiber) — der Ton war dann da, das Bild fehlte.
     const frames = frameSource(v);
-    const cleanup = () => { try { g.masterGain.disconnect(dest); } catch {} frames.stop(); };
+    const cleanup = () => { try { g.out.disconnect(dest); } catch {} frames.stop(); };
     premPreparedCleanup = cleanup;
     const stream = new MediaStream([...frames.stream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     // MP4 wenn der Browser es kann: das laesst sich direkt bei TikTok/Insta hochladen,
@@ -13771,7 +13809,6 @@ async function playMixInternal(opts) {
     const dest = (rk != null)
       ? ensurePremPlayerGainNode(ctx, rk, master)
       : master;
-    connectChain(src, ctx, role, dest);
     // Spur auf ihr Line-Fenster begrenzen → kein Reinlabern in die nächste Line
     const _rate = src.playbackRate.value || 1;
     let maxDur = item.buffer.duration;
@@ -13784,14 +13821,34 @@ async function playMixInternal(opts) {
       maxDur = Math.min(maxDur, windowSec * _rate);
     }
     const when = t0 + item.startAt + off;
-    if (when >= ctx.currentTime) src.start(when, 0, maxDur);
-    else {
+    if (when >= ctx.currentTime) {
+      connectChain(src, ctx, role, dest, lineEnvelope(ctx, src, when, maxDur / _rate));
+      src.start(when, 0, maxDur);
+    } else {
       const lateSec = ctx.currentTime - when;            // schon verstrichene ECHTZEIT
       const offsetSrc = lateSec * _rate;                  // entspricht so viel Quellmaterial
-      src.start(ctx.currentTime, offsetSrc, Math.max(0.05, maxDur - offsetSrc));
+      const rest = Math.max(0.05, maxDur - offsetSrc);
+      connectChain(src, ctx, role, dest, lineEnvelope(ctx, src, ctx.currentTime, rest / _rate));
+      src.start(ctx.currentTime, offsetSrc, rest);
     }
     playNodes.push(src);
   }
+  // Gleichlauf Bild ↔ Stimmen. Die Stimmen laufen auf der Uhr des AudioContext, das Video
+  // auf seiner eigenen. Lädt das Video mitten in der Premiere nach (große Szenen, langsames
+  // Netz), lief bisher der Ton einfach weiter — ab da war die ganze Szene versetzt.
+  // Jetzt: beim Nachladen den Ton mit anhalten, kleine Abweichungen per Sprung angleichen.
+  const syncGen = ++premSyncGen;
+  const alive = () => syncGen === premSyncGen && !v.ended;
+  const onWaiting = () => { if (alive() && !premPaused && ctx.state === "running") { premStalled = true; ctx.suspend().catch(() => {}); } };
+  const onPlaying = () => { if (premStalled && alive() && !premPaused) { premStalled = false; ctx.resume().catch(() => {}); } };
+  v.addEventListener("waiting", onWaiting);
+  v.addEventListener("playing", onPlaying);
+  const driftTimer = setInterval(() => {
+    if (!alive()) { clearInterval(driftTimer); v.removeEventListener("waiting", onWaiting); v.removeEventListener("playing", onPlaying); return; }
+    if (premPaused || premStalled || v.paused || ctx.state !== "running") return;
+    const soll = ctx.currentTime - t0;                    // wo das Bild laut Ton-Uhr sein müsste
+    if (soll > 0.5 && Math.abs(v.currentTime - soll) > 0.25) { try { v.currentTime = soll; } catch {} }
+  }, 1000);
   // Videoende = ALLES stoppt → kein 1–2s-Nachlauf-Audio mehr
   v.addEventListener("ended", () => {
     playNodes.forEach(n => { try { n.stop(); } catch {} });
@@ -13851,9 +13908,9 @@ $("sync-offset").oninput = (e) => {
 // brauchen einen Oszillator (LFO), der dauerhaft läuft. Früher wurde der nie gestoppt:
 // jede Wiedergabe/Vorschau ließ neue Oszillatoren weiterlaufen — der Ton-Graph wuchs
 // und kostete immer mehr Rechenzeit. Jetzt enden sie zusammen mit ihrer Quelle.
-function connectChain(src, ctx, role, dest) {
+function connectChain(src, ctx, role, dest, via) {
   const chain = buildChain(ctx, role, dest);
-  src.connect(chain);
+  (via || src).connect(chain);
   const lfos = chain._ssLfos;
   if (lfos && lfos.length) {
     const stopLfos = () => lfos.forEach(o => { try { o.stop(); } catch {} try { o.disconnect(); } catch {} });

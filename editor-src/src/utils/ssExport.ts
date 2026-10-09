@@ -109,7 +109,8 @@ async function muxVideoWithBacking(
   backingBlob: Blob | null,
   backingName: string,
   onProgress: (p: number, msg: string) => void,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  muteWindows: [number, number][] = []
 ): Promise<Blob> {
   const inName = `in.${videoExt(videoBlob, videoName)}`;
   const aName = backingBlob ? `backing.${audioExt(backingBlob, backingName)}` : '';
@@ -125,14 +126,24 @@ async function muxVideoWithBacking(
 
     // Ton: der Backing-Track. `apad` + `-shortest` = das Video bestimmt die Länge.
     // Vorher schnitt `-shortest` allein das VIDEO ab, sobald der Backing-Track kürzer war.
-    const audioArgs = backingBlob
-      ? ['-i', aName, '-map', '0:v:0', '-map', '1:a:0', '-af', 'apad', '-c:a', 'aac', '-b:a', '96k', '-shortest']
-      : ['-map', '0:v:0', '-an'];   // ohne Backing-Track lieber stumm als mit Originalstimmen
-    const attempts: string[][] = [
-      ['-i', inName, ...audioArgs, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-vf', SCALE_720P, '-movflags', '+faststart', 'out.mp4'],
-      ['-i', inName, ...audioArgs, '-c:v', 'mpeg4', '-q:v', '6', '-vf', SCALE_720P, 'out.mp4'],
-      ['-i', inName, ...audioArgs, '-c:v', 'copy', 'out.mp4'],
-    ];
+    // Ohne Backing-Track: der Videoton, aber an den Zeilen-Stellen stumm — so bleibt Musik/Geräusch
+    // zwischen den Zeilen erhalten, und die Originalstimmen laufen nie unter den eigenen Aufnahmen.
+    // (Vorher war die Szene dann komplett stumm.) Hat das Video gar keinen Ton, greift der stumme Fallback.
+    const cond = muteWindows.map(([a, b]) => `between(t,${a.toFixed(3)},${b.toFixed(3)})`).join('+');
+    const audioVariants: string[][] = backingBlob
+      ? [['-i', aName, '-map', '0:v:0', '-map', '1:a:0', '-af', 'apad', '-c:a', 'aac', '-b:a', '96k', '-shortest']]
+      : [
+          ...(cond ? [['-map', '0:v:0', '-map', '0:a:0', '-af', `volume=enable='${cond}':volume=0`, '-c:a', 'aac', '-b:a', '96k']] : []),
+          ['-map', '0:v:0', '-an'],
+        ];
+    const attempts: string[][] = [];
+    for (const audioArgs of audioVariants) {
+      attempts.push(
+        ['-i', inName, ...audioArgs, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-vf', SCALE_720P, '-movflags', '+faststart', 'out.mp4'],
+        ['-i', inName, ...audioArgs, '-c:v', 'mpeg4', '-q:v', '6', '-vf', SCALE_720P, 'out.mp4'],
+        ['-i', inName, ...audioArgs, '-c:v', 'copy', 'out.mp4'],
+      );
+    }
     for (const args of attempts) {
       await cleanupFiles(ffmpeg, ['out.mp4']);
       const code = await runFfmpeg(ffmpeg, ['-y', ...args], abortSignal);
@@ -275,7 +286,9 @@ export async function exportSynchronstudioZip(
     const n = String(i + 1).padStart(2, '0');
     const who = clip.dubCharacters[0] || rolesSource[0]?.name || 'Role';
     const rid = roleIndex.has(who) ? roleIndex.get(who)! : 0;
-    const t = +Math.max(0, clip.dubTimestamps?.[0] ?? clip.startTime).toFixed(3);
+    // Die Zeile beginnt da, wo der Clip beginnt — lag der Dub-Zeitpunkt später, wurde vorher der
+    // Anfang der Stimme abgeschnitten (z. B. „Ta-“ von „Tanjiro“ fehlte im Original-Ton).
+    const t = +Math.max(0, Math.min(clip.startTime, clip.dubTimestamps?.[0] ?? clip.startTime)).toFixed(3);
     const end = +Math.max(t + 0.2, clip.endTime).toFixed(3);
     const text = (clip.caption || '').replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim() || `(line ${n})`;
     const de = (clip.captionDe || text).replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim();
@@ -313,7 +326,8 @@ export async function exportSynchronstudioZip(
       sceneMp4 = await muxVideoWithBacking(
         ffmpeg, videoBlob, videoMedia?.name || '', backingBlob, backingTrackMedia?.name || '',
         (p, msg) => upd(msg, 48 + (p / 100) * 37),
-        abortSignal
+        abortSignal,
+        lines.map((l) => [Math.max(0, (l.t as number) - 0.06), (l.end as number) + 0.06] as [number, number])
       );
     } catch (e) {
       if (e instanceof ExportCancelled) throw e;
