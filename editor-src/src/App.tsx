@@ -1067,9 +1067,12 @@ export default function App() {
       return;
     }
 
-    const videoData = videoBuffer.getChannelData(0);
-    const backingData = backingBuffer ? backingBuffer.getChannelData(0) : null;
-    const sampleRate = videoBuffer.sampleRate;
+    // Mit „Vocals only“-Spur dort suchen: reine Stimmen, keine Musik — viel treffsicherer
+    const vocalsBuffer = vocalsMedia?.audioBuffer;
+    const scanBuffer = vocalsBuffer || videoBuffer;
+    const videoData = scanBuffer.getChannelData(0);
+    const backingData = !vocalsBuffer && backingBuffer ? backingBuffer.getChannelData(0) : null;
+    const sampleRate = scanBuffer.sampleRate;
     const minSpeechDuration = 0.4;
     // Lautstärke (RMS) über ~46-ms-Fenster statt eines einzelnen Messwerts: einzelne Samples
     // sind zufällig und zerhackten Sätze mitten im Wort. Dazu 0,25 s Nachlauf, damit kurze
@@ -1087,7 +1090,10 @@ export default function App() {
     let speakStart = 0;
     let lastLoud = 0;
     let clipCounter = clips.length + 1;
-    const threshold = backingData ? 0.04 : 0.03;
+    // Vocals-Spur: Schwelle relativ zur lautesten Stelle (leise abgemischte Spuren gehen sonst unter)
+    let vocalsPeak = 0;
+    if (vocalsBuffer) for (let i = 0; i < videoData.length; i += 64) { const a = Math.abs(videoData[i]); if (a > vocalsPeak) vocalsPeak = a; }
+    const threshold = vocalsBuffer ? Math.max(0.006, vocalsPeak * 0.06) : backingData ? 0.04 : 0.03;
 
     const closeSegment = (endSec: number) => {
       if (endSec - speakStart < minSpeechDuration) return;
@@ -1123,11 +1129,11 @@ export default function App() {
         if (!isSpeaking) { isSpeaking = true; speakStart = Math.max(0, timeSec - 0.05); }
         lastLoud = timeSec;
       } else if (isSpeaking && timeSec - lastLoud > hangover) {
-        closeSegment(Math.min(videoBuffer.duration, lastLoud + 0.15));
+        closeSegment(Math.min(scanBuffer.duration, lastLoud + 0.15));
         isSpeaking = false;
       }
     }
-    if (isSpeaking) closeSegment(Math.min(videoBuffer.duration, lastLoud + 0.15));
+    if (isSpeaking) closeSegment(Math.min(scanBuffer.duration, lastLoud + 0.15));
 
     if (newClips.length > 0) {
       setClips((prev) => reindexClipsByCharacter([...prev, ...newClips], characters));
