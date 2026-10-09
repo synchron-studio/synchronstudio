@@ -205,7 +205,7 @@ async function booth(page, nRecord = 1, recMs = 1200) {
   return screen(page);
 }
 async function rateAll(page, stars = 5) {
-  await page.waitForFunction(() => document.getElementById('rate-card').style.display !== 'none', null, { timeout: 120000 });
+  await page.waitForFunction(() => document.getElementById('rate-card').style.display !== 'none', null, { timeout: 300000 });
   const rows = await page.$$('#rate-rows .raterow');
   for (const row of rows) { const b = await row.$(`.starbtn[data-n="${stars}"]`); if (b) await b.click(); }
   const sub = await page.$('#btn-rate-submit');

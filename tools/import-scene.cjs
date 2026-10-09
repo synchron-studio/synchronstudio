@@ -308,6 +308,8 @@ function slugify(t, max = 40) {
 /** CV-Untertitel spieltauglich machen: (VFX: …) raus, 'Betonungs'-Anführungszeichen raus. */
 function cleanCaption(c) {
   let t = String(c || '');
+  // Manche Packs schreiben den Sprecher davor: „[Isagi] "Text"“ — der Name steht im Spiel ohnehin daneben
+  t = t.replace(/^\s*\[[^\]]{1,60}\]\s*/, '');
   t = t.replace(/\(\s*VFX:[^)]*\)/gi, ' ');
   // „(Guessing (VFX …)“ → nach dem Entfernen offene Klammer schließen
   const open = (t.match(/\(/g) || []).length, close = (t.match(/\)/g) || []).length;

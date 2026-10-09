@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.8";
+const APP_VERSION = "9.25.9";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -816,14 +816,19 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
-  { v: "9.25.8", items: [
-    "🎬 Neue Szene: Hollow Ichigo vs Ulquiorra (English Dub)",
-    "🎬 Neue Szene: BLUE LOCK Isagis Direct Shot",
-    "🎬 Neue Szene: Demon Slayer Hashira Training Drill SanemiObanaiMuichiro"
+  { v: "9.25.9", items: [
+    "✏️ Neue Szenen: Untertitel aufgeräumt (kein „[Name]“ mehr davor) und deutsche Übersetzung von Hand verbessert"
   ], itemsEn: [
-    "🎬 New scene: Hollow Ichigo vs Ulquiorra (English Dub)",
-    "🎬 New scene: BLUE LOCK Isagis Direct Shot",
-    "🎬 New scene: Demon Slayer Hashira Training Drill SanemiObanaiMuichiro"
+    "✏️ New scenes: cleaned-up subtitles (no more “[Name]” prefix) and hand-polished German translation"
+  ]},
+  { v: "9.25.8", items: [
+    "🎬 Neue Szene: Bleach — Hollow Ichigo vs Ulquiorra",
+    "🎬 Neue Szene: Blue Lock — Isagi's Direct Shot",
+    "🎬 Neue Szene: Demon Slayer — Hashira Training"
+  ], itemsEn: [
+    "🎬 New scene: Bleach — Hollow Ichigo vs Ulquiorra",
+    "🎬 New scene: Blue Lock — Isagi's Direct Shot",
+    "🎬 New scene: Demon Slayer — Hashira Training"
   ]},
   { v: "9.25.7", items: [
     "🔌 Fix: Wer schon fertig aufgenommen hat und kurz die Verbindung verliert, muss nicht mehr alles neu aufnehmen — die Takes sind ja schon beim Host"
@@ -2100,29 +2105,29 @@ const AVATAR_CHARS = [
   { img: "scenes/bleach_ulquiorra_what_is_a_heart/ulquiorra.png", label: "Ulquiorra · BLEACH — Ulquiorra What is a Heart" },
   { img: "scenes/bleach_ulquiorra_what_is_a_heart/orihime.png", label: "Orihime · BLEACH — Ulquiorra What is a Heart" },
   { img: "scenes/erwin_s_speech/floch.png", label: "Floch · Erwin's Speech" },
-  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/ulq.png", label: "Ulq · Hollow Ichigo vs Ulquiorra (English Dub)" },
-  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/orihime.png", label: "orihime · Hollow Ichigo vs Ulquiorra (English Dub)" },
-  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/uryu.png", label: "uryu · Hollow Ichigo vs Ulquiorra (English Dub)" },
-  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/ichigo.png", label: "Ichigo · Hollow Ichigo vs Ulquiorra (English Dub)" },
-  { img: "scenes/blue_lock_isagis_direct_shot/niko.png", label: "Niko · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/okawa.png", label: "Okawa · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/random_guy_on_team_y.png", label: "Random guy on team Y · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/gagamaru.png", label: "Gagamaru · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/isagi.png", label: "Isagi · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/raichi.png", label: "Raichi · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/igaguri.png", label: "Igaguri · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/random_dude_on_team_z.png", label: "Random dude on team Z · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/chigiri.png", label: "Chigiri · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/lemon.png", label: "Lemon · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/naruhaya.png", label: "Naruhaya · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/kunigami.png", label: "Kunigami · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/random_guy_on_team_y_2.png", label: "Random guy on team Y 2 · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/bachira.png", label: "Bachira · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/blue_lock_isagis_direct_shot/kuon.png", label: "Kuon · BLUE LOCK Isagis Direct Shot" },
-  { img: "scenes/demon_slayer_hashira_training_drill_sane/sanemi.png", label: "Sanemi · Demon Slayer Hashira Training Drill SanemiObanaiMuichiro" },
-  { img: "scenes/demon_slayer_hashira_training_drill_sane/obanai.png", label: "Obanai · Demon Slayer Hashira Training Drill SanemiObanaiMuichiro" },
-  { img: "scenes/demon_slayer_hashira_training_drill_sane/muichiro.png", label: "Muichiro · Demon Slayer Hashira Training Drill SanemiObanaiMuichiro" },
-  { img: "scenes/demon_slayer_hashira_training_drill_sane/kasugai_crow.png", label: "Kasugai Crow · Demon Slayer Hashira Training Drill SanemiObanaiMuichiro" },
+  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/ulq.png", label: "Ulquiorra · Bleach — Hollow Ichigo vs Ulquiorra" },
+  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/orihime.png", label: "Orihime · Bleach — Hollow Ichigo vs Ulquiorra" },
+  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/uryu.png", label: "Uryu · Bleach — Hollow Ichigo vs Ulquiorra" },
+  { img: "scenes/hollow_ichigo_vs_ulquiorra_english_dub/ichigo.png", label: "Ichigo · Bleach — Hollow Ichigo vs Ulquiorra" },
+  { img: "scenes/blue_lock_isagis_direct_shot/niko.png", label: "Niko · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/okawa.png", label: "Okawa · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/random_guy_on_team_y.png", label: "Team Y Player · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/gagamaru.png", label: "Gagamaru · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/isagi.png", label: "Isagi · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/raichi.png", label: "Raichi · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/igaguri.png", label: "Igaguri · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/random_dude_on_team_z.png", label: "Team Z Player · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/chigiri.png", label: "Chigiri · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/lemon.png", label: "Lemon · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/naruhaya.png", label: "Naruhaya · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/kunigami.png", label: "Kunigami · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/random_guy_on_team_y_2.png", label: "Team Y Player 2 · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/bachira.png", label: "Bachira · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/blue_lock_isagis_direct_shot/kuon.png", label: "Kuon · Blue Lock — Isagi's Direct Shot" },
+  { img: "scenes/demon_slayer_hashira_training_drill_sane/sanemi.png", label: "Sanemi · Demon Slayer — Hashira Training" },
+  { img: "scenes/demon_slayer_hashira_training_drill_sane/obanai.png", label: "Obanai · Demon Slayer — Hashira Training" },
+  { img: "scenes/demon_slayer_hashira_training_drill_sane/muichiro.png", label: "Muichiro · Demon Slayer — Hashira Training" },
+  { img: "scenes/demon_slayer_hashira_training_drill_sane/kasugai_crow.png", label: "Kasugai Crow · Demon Slayer — Hashira Training" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
