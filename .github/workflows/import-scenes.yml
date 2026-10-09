@@ -22,7 +22,8 @@ concurrency:
 jobs:
   import:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Lange Packs (z. B. ein 44-Minuten-Kampf) brauchen zum Umwandeln deutlich länger
+    timeout-minutes: 150
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -35,6 +36,9 @@ jobs:
 
       - name: Werkzeuge
         run: |
+          # Platz für große (mehrteilige) Downloads schaffen — vorinstallierte SDKs werden hier nicht gebraucht
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1
           npm ci --ignore-scripts --no-audit --no-fund
           # ffmpeg für Videos; 7z/unar für RAR- und 7z-Packs (GameBanana)
           (command -v ffmpeg && command -v 7z && command -v unar) >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg p7zip-full unar >/dev/null)

@@ -9,7 +9,9 @@
 
 **Noch einfacher bei GameBanana-Packs:** Datei `_import/links.txt` anlegen (Add file → Create new file),
 pro Zeile einen Link wie `https://gamebanana.com/mods/724620` → „Commit changes“. GitHub lädt die Packs
-selbst herunter (auch RAR/7z und über 25 MB) und baut sie ein; die Liste wird danach automatisch geleert.
+selbst herunter (auch RAR/7z, mehrteilige Archive und über 25 MB) und baut sie ein; die Liste wird danach
+automatisch geleert. Mehrere Packs in einem Archiv werden zu mehreren Szenen; Packs über 16 Minuten werden
+automatisch in Teile von ca. 10 Minuten geschnitten („Teil 1/4“ …), damit die Qualität gut bleibt.
 
 **Wie sehe ich, ob es geklappt hat?** Oben auf **„Actions“** klicken → Lauf **„Szenen importieren“**:
 - ✅ grüner Haken = eingebaut (in der Zusammenfassung steht, was genau)
