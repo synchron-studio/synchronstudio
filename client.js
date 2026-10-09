@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.4";
+const APP_VERSION = "9.26.5";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -62,6 +62,11 @@ const OVERSIZE_MP4 = new Set([
   "scenes/zenitsukaigaku.mp4",   // 23,3 MB
   "scenes/kawaimarin.mp4",       // 21,3 MB
   "scenes/akazafullfight.mp4",   // ~93 MB 720p (~24 min FULL FIGHT)
+  "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil1.mp4", // 71.7 MB (automatisch importiert)
+  "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil2.mp4", // 61.3 MB (automatisch importiert)
+  "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil3.mp4", // 71.9 MB (automatisch importiert)
+  "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil4.mp4", // 62.0 MB (automatisch importiert)
+  "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil5.mp4", // 56.6 MB (automatisch importiert)
 ]);
 function useCdnAssets() {
   try { return /\.github\.io$/i.test(location.hostname); } catch { return false; }
@@ -832,6 +837,19 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.5", items: [
+    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5",
+    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5",
+    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 3/5",
+    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 4/5",
+    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5"
+  ], itemsEn: [
+    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5",
+    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5",
+    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 3/5",
+    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 4/5",
+    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5"
+  ]},
   { v: "9.26.4", items: [
     "🎬 Neue Szene: Cyberpunk Edgerunners Finale"
   ], itemsEn: [
@@ -2208,6 +2226,14 @@ const AVATAR_CHARS = [
   { img: "scenes/cyberpunk_edgerunners_finale/falco.png", label: "Falco · Cyberpunk Edgerunners Finale" },
   { img: "scenes/cyberpunk_edgerunners_finale/adam_smasher.png", label: "Adam Smasher · Cyberpunk Edgerunners Finale" },
   { img: "scenes/cyberpunk_edgerunners_finale/lucy.png", label: "Lucy · Cyberpunk Edgerunners Finale" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/tanjiro.png", label: "Tanjiro · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/giyu.png", label: "Giyu · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akaza_and_hakuji.png", label: "Akaza and Hakuji · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/keizo_aka_dojo_mentor.png", label: "Keizo aka Dojo Mentor · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akazas_dad.png", label: "Akazas Dad · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/muzan.png", label: "Muzan · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/koyuki_aka_akazas_wife.png", label: "Koyuki aka Akazas wife · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/crow.png", label: "Crow · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
