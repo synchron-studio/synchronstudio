@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.3";
+const APP_VERSION = "9.26.4";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -832,6 +832,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.4", items: [
+    "🎬 Neue Szene: Cyberpunk Edgerunners Finale"
+  ], itemsEn: [
+    "🎬 New scene: Cyberpunk Edgerunners Finale"
+  ]},
   { v: "9.26.3", items: [
     "🎬 Neue Szene: Chainsaw man funny momments"
   ], itemsEn: [
@@ -2199,6 +2204,10 @@ const AVATAR_CHARS = [
   { img: "scenes/chainsaw_man_funny_momments/power.png", label: "Power · Chainsaw man funny momments" },
   { img: "scenes/chainsaw_man_funny_momments/hirokazu.png", label: "Hirokazu · Chainsaw man funny momments" },
   { img: "scenes/chainsaw_man_funny_momments/himeno.png", label: "Himeno · Chainsaw man funny momments" },
+  { img: "scenes/cyberpunk_edgerunners_finale/david.png", label: "David · Cyberpunk Edgerunners Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/falco.png", label: "Falco · Cyberpunk Edgerunners Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/adam_smasher.png", label: "Adam Smasher · Cyberpunk Edgerunners Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/lucy.png", label: "Lucy · Cyberpunk Edgerunners Finale" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
