@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Film, Music, ArrowUpDown } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Film, Music, Mic, ArrowUpDown } from 'lucide-react';
 import { Character, TimelineClip } from '../types';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
@@ -17,6 +17,10 @@ interface VideoStageProps {
   onToggleMute: () => void;
   isBackingTrackOnly?: boolean;
   onToggleBackingTrackOnly?: () => void;
+  /** Optionale „Vocals only“-Spur: solo vorhören, um zu prüfen, welche Stimmen exportiert werden */
+  vocalsUrl?: string;
+  isVocalsOnly?: boolean;
+  onToggleVocalsOnly?: () => void;
   captionOffset?: { x: number; y: number };
   captionAlign?: 'left' | 'center' | 'right';
   onCaptionOffsetChange?: (offset: { x: number; y: number }, align?: 'left' | 'center' | 'right') => void;
@@ -37,6 +41,9 @@ export const VideoStage: React.FC<VideoStageProps> = ({
   onToggleMute,
   isBackingTrackOnly = false,
   onToggleBackingTrackOnly,
+  vocalsUrl,
+  isVocalsOnly = false,
+  onToggleVocalsOnly,
   captionOffset,
   captionAlign,
   onCaptionOffsetChange,
@@ -44,6 +51,7 @@ export const VideoStage: React.FC<VideoStageProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const backingAudioRef = useRef<HTMLAudioElement>(null);
+  const vocalsAudioRef = useRef<HTMLAudioElement>(null);
   const lastUpdateTimeRef = useRef<number>(0);
   const [isScrubbing, setIsScrubbing] = React.useState(false);
 
@@ -202,11 +210,12 @@ export const VideoStage: React.FC<VideoStageProps> = ({
   }, [currentTime, isScrubbing, isPlaying]);
 
   useEffect(() => {
-    if (!backingAudioRef.current || isScrubbing) return;
-    const drift = Math.abs(backingAudioRef.current.currentTime - currentTime);
-    const threshold = isPlaying ? 0.2 : 0.001;
-    if (drift > threshold) {
-      backingAudioRef.current.currentTime = currentTime;
+    if (isScrubbing) return;
+    for (const el of [backingAudioRef.current, vocalsAudioRef.current]) {
+      if (!el) continue;
+      const drift = Math.abs(el.currentTime - currentTime);
+      const threshold = isPlaying ? 0.2 : 0.001;
+      if (drift > threshold) el.currentTime = currentTime;
     }
   }, [currentTime, isScrubbing, isPlaying]);
 
@@ -226,7 +235,15 @@ export const VideoStage: React.FC<VideoStageProps> = ({
         backingAudioRef.current.pause();
       }
     }
-  }, [isPlaying, isScrubbing, isBackingTrackOnly]);
+    if (vocalsAudioRef.current) {
+      if (isPlaying && !isScrubbing && isVocalsOnly) {
+        vocalsAudioRef.current.currentTime = videoRef.current?.currentTime ?? vocalsAudioRef.current.currentTime;
+        vocalsAudioRef.current.play().catch(() => {});
+      } else {
+        vocalsAudioRef.current.pause();
+      }
+    }
+  }, [isPlaying, isScrubbing, isBackingTrackOnly, isVocalsOnly]);
 
   // Smooth playhead tracking via requestAnimationFrame
   useEffect(() => {
@@ -268,6 +285,9 @@ export const VideoStage: React.FC<VideoStageProps> = ({
     if (backingAudioRef.current) {
       backingAudioRef.current.currentTime = time;
     }
+    if (vocalsAudioRef.current) {
+      vocalsAudioRef.current.currentTime = time;
+    }
   };
 
   const isUpperHalf = localCaptionOffset.y > 0;
@@ -279,6 +299,14 @@ export const VideoStage: React.FC<VideoStageProps> = ({
         <audio
           ref={backingAudioRef}
           src={backingTrackUrl}
+          muted={isMuted}
+          playsInline
+        />
+      )}
+      {vocalsUrl && (
+        <audio
+          ref={vocalsAudioRef}
+          src={vocalsUrl}
           muted={isMuted}
           playsInline
         />
@@ -325,6 +353,35 @@ export const VideoStage: React.FC<VideoStageProps> = ({
             </Tooltip>
           )}
 
+          {onToggleVocalsOnly && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={!hasVideo || !vocalsUrl}
+                  onClick={() => hasVideo && vocalsUrl && onToggleVocalsOnly?.()}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 transition-all border ${
+                    !hasVideo || !vocalsUrl
+                      ? 'bg-zinc-900/40 text-zinc-600 border-zinc-800/40 opacity-40 cursor-not-allowed'
+                      : isVocalsOnly
+                      ? 'bg-amber-500/20 text-amber-300 border-zinc-800 cursor-pointer'
+                      : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200 cursor-pointer'
+                  }`}
+                >
+                  <Mic className={`w-3 h-3 ${isVocalsOnly && hasVideo && vocalsUrl ? 'text-amber-400' : 'text-zinc-500'}`} />
+                  <span>{isVocalsOnly && vocalsUrl ? 'Vocals Solo' : 'Play Vocals Only'}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {!vocalsUrl
+                  ? 'No vocals track uploaded yet.'
+                  : isVocalsOnly
+                  ? 'Currently playing only the vocals track — this is what the exported lines are cut from'
+                  : 'Click to hear only the vocals track over the video (check that it is the right, clean one)'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           {/* Active Clip ID Indicator */}
           {activeClip ? (
             <div className="flex items-center gap-2 bg-zinc-900/50 border border-amber-500/20 px-2.5 py-1 rounded-md text-[11px]">
@@ -349,7 +406,7 @@ export const VideoStage: React.FC<VideoStageProps> = ({
             ref={videoRef}
             id="main-video-player"
             src={videoUrl}
-            muted={isMuted || isBackingTrackOnly}
+            muted={isMuted || isBackingTrackOnly || isVocalsOnly}
             playsInline
             className="absolute inset-0 w-full h-full object-contain"
             onEnded={() => {
@@ -373,7 +430,7 @@ export const VideoStage: React.FC<VideoStageProps> = ({
         )}
 
         {/* Active Character Badge Overlay (Top Left) */}
-        {!isBackingTrackOnly && activeClip && activeClip.dubCharacters.length > 0 && (
+        {!isBackingTrackOnly && !isVocalsOnly && activeClip && activeClip.dubCharacters.length > 0 && (
           <div className="absolute top-4 left-4 flex items-center gap-2.5 bg-[#0a0a0b]/80 border border-zinc-800/50 px-3 py-1.5 rounded-full text-xs font-bold text-white backdrop-blur-md pointer-events-none transition-opacity z-10">
             {activeChar?.avatarUrl && (
               <img

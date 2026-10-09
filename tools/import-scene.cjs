@@ -182,6 +182,23 @@ function validate(dir) {
   for (const k of Object.keys(avatars)) want(avatars[k], `Bild für Rolle ${k}`, () => { delete avatars[k]; });
   scene.avatars = avatars;
   lines.forEach((l, i) => { if (l.orig != null) want(l.orig, `Original-Ton Zeile ${i + 1}`, () => { delete l.orig; }); });
+  // Ältere Editor-Exporte enthielten teils fast unhörbar leise Zeilen — hier auf hörbaren Pegel bringen
+  let louder = 0;
+  const normDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-norm-'));
+  lines.forEach((l, i) => {
+    const src = l.orig && files.get(l.orig);
+    if (!src || !has('ffmpeg')) return;
+    try {
+      const r = cp.spawnSync('ffmpeg', ['-hide_banner', '-i', src, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8' });
+      const peak = +((/max_volume: (-?[\d.]+) dB/.exec(r.stderr || '') || [])[1]);
+      if (!Number.isFinite(peak) || peak > -6) return;
+      const gain = Math.min(20, -1 - peak);
+      const dst = path.join(normDir, `line_${i}.mp3`);
+      ffmpegRun(['-i', src, '-ac', '1', '-af', `volume=${gain.toFixed(1)}dB`, '-c:a', 'libmp3lame', '-b:a', '64k', dst], `Zeile ${i + 1}`);
+      files.set(l.orig, dst); louder++;
+    } catch { /* Original behalten */ }
+  });
+  if (louder) notes.push(`${louder} zu leise Original-Zeile(n) lauter gemacht.`);
 
   const previewRel = `previews/${id}.mp4`;
   const previewAbs = path.join(dir, previewRel);

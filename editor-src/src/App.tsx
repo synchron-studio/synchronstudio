@@ -107,6 +107,7 @@ export default function App() {
 
   // Backing Track Solo preview toggle state
   const [isBackingTrackOnly, setIsBackingTrackOnly] = useState(false);
+  const [isVocalsOnly, setIsVocalsOnly] = useState(false);
 
   const [projectId, setProjectId] = useState<string>(`project_${Date.now()}`);
   // Wurde in dieser Sitzung schon ein Projekt geöffnet/angelegt? Vorher zeigte
@@ -1143,7 +1144,8 @@ export default function App() {
       activeAudioPlaybackRef.current.stop();
     }
 
-    const audioBuffer = videoMedia?.audioBuffer || backingTrackMedia?.audioBuffer;
+    // Vorhören wie der Export: zuerst die Vocals-Spur (daraus werden die Zeilen geschnitten)
+    const audioBuffer = vocalsMedia?.audioBuffer || videoMedia?.audioBuffer || backingTrackMedia?.audioBuffer;
     if (!audioBuffer) return;
 
     try {
@@ -1509,7 +1511,10 @@ export default function App() {
                 isMuted={isMuted}
                 onToggleMute={() => setIsMuted((prev) => !prev)}
                 isBackingTrackOnly={isBackingTrackOnly}
-                onToggleBackingTrackOnly={() => setIsBackingTrackOnly((prev) => !prev)}
+                onToggleBackingTrackOnly={() => { setIsVocalsOnly(false); setIsBackingTrackOnly((prev) => !prev); }}
+                vocalsUrl={vocalsMedia?.url}
+                isVocalsOnly={isVocalsOnly && !!vocalsMedia}
+                onToggleVocalsOnly={() => { setIsBackingTrackOnly(false); setIsVocalsOnly((prev) => !prev); }}
                 captionOffset={packInfo.captionOffset}
                 captionAlign={packInfo.captionAlign}
                 onCaptionOffsetChange={(offset, align) => {
