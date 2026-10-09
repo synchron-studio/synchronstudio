@@ -1,0 +1,6 @@
+Diese Szene wurde NICHT eingebaut.
+
+Grund:
+Download fehlgeschlagen: Command failed: curl -fsSL --retry 3 -m 600 -A Synchronstudio-Import -o /tmp/ss-dl-46M9SU/giyu_and_tanjiro_vs_akaza_full_fight_44_minutespart1.rar https://gamebanana.com/dl/1819527
+
+Nach dem Beheben das ZIP (bzw. den Link in _import/links.txt) einfach nochmal hochladen.

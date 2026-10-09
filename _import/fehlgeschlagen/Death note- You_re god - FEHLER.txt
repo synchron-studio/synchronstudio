@@ -1,0 +1,6 @@
+Diese Szene wurde NICHT eingebaut.
+
+Grund:
+Das Archiv ließ sich nicht öffnen (beschädigt oder kein ZIP).
+
+Nach dem Beheben das ZIP (bzw. den Link in _import/links.txt) einfach nochmal hochladen.

@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.0";
+const APP_VERSION = "9.26.1";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -832,6 +832,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.1", items: [
+    "🎬 Neue Szene: Isagis First Goal"
+  ], itemsEn: [
+    "🎬 New scene: Isagis First Goal"
+  ]},
   { v: "9.26.0", items: [
     "🎭 10 neue Stimm-Effekte: Dämon, Geist, Alien, Streifenhörnchen, Zittrig, Raumhelm/Maske, Kaputtes Funkgerät, Innere Stimme, Höhle, Arena — auch im Chaos-Modus",
     "🗂 Effekt-Auswahl in der Kabine nach Gruppen sortiert (Stimme, Figuren, Geräte, Raum)",
@@ -2159,6 +2164,18 @@ const AVATAR_CHARS = [
   { img: "scenes/demon_slayer_hashira_training_drill_sane/obanai.png", label: "Obanai · Demon Slayer — Hashira Training" },
   { img: "scenes/demon_slayer_hashira_training_drill_sane/muichiro.png", label: "Muichiro · Demon Slayer — Hashira Training" },
   { img: "scenes/demon_slayer_hashira_training_drill_sane/kasugai_crow.png", label: "Kasugai Crow · Demon Slayer — Hashira Training" },
+  { img: "scenes/isagis_first_goal/okuhito.png", label: "Okuhito · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/raichi.png", label: "Raichi · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/naruhaya.png", label: "Naruhaya · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum.png", label: "Random bum · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/isagi.png", label: "Isagi · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/niko.png", label: "Niko · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/kunigami.png", label: "Kunigami · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum_2.png", label: "Random Bum 2 · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum_3.png", label: "Random Bum 3 · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/bachira.png", label: "Bachira · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/gagamaru.png", label: "Gagamaru · Isagis First Goal" },
+  { img: "scenes/isagis_first_goal/igarashi.png", label: "Igarashi · Isagis First Goal" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
