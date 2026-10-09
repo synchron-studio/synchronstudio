@@ -3,7 +3,7 @@
 //         ONLY=team3,duel node scenarios.cjs
 const path = require('path');
 const H = require('./harness.cjs');
-const ALL = 'chaos,chaosteam,profile,free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,dropdone,ownvideo,ttt';
+const ALL = 'chaos,chaosteam,profile,free3,match,br,duel,team3,teamleave,handoff,matchhandoff,pack,packogv,blind,daily,latejoin,kick,drop,dropdone,hostdrop,ownvideo,ttt';
 const which = (process.env.ONLY || ALL).split(',');
 const results = [];
 async function scenario(name, fn) {
@@ -381,6 +381,41 @@ async function freeRound(ps, host, sceneId, roles) {
     await Promise.all(ps.map(p => H.waitScreen(p, 'scr-playback', 90000)));
     const roles = await host.evaluate(() => [...collected.keys()].sort().join(','));
     return { afterRejoin, waitText, roles };
+  });
+  // Host verliert kurz das Internet, während die Gäste weiter aufnehmen und fertig werden:
+  // Fortschritt + Takes müssen danach beim Host ankommen, die Premiere muss starten
+  await scenario('hostdrop', async (b, reg) => {
+    const { ps, host } = await H.room(b, 3); reg(ps);
+    await H.hostLoadScene(host, 'ghostweight');   // 3 Rollen
+    for (const p of ps.slice(1)) await p.waitForFunction(() => scene && scene.id, null, { timeout: 20000 });
+    for (const [i, p] of ps.entries()) await H.pickRole(p, i);
+    for (const p of ps) await H.ready(p);
+    await H.hostStart(host);
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-booth', 60000)));
+    // Host offline: Vermittlung weg + alle Leitungen zu, automatisches Neuanmelden vorerst blockiert
+    await host.evaluate(() => {
+      const re = peer.reconnect.bind(peer);
+      peer.reconnect = () => {};
+      window.__hostZurueck = () => { peer.reconnect = re; re(); };
+      peer.disconnect();
+      conns.forEach(c => { try { c.close(); } catch (e) {} });
+    });
+    await host.waitForFunction(() => players.filter(p => p.offline).length === 2, null, { timeout: 30000 });
+    // Gäste nehmen in der Zwischenzeit alles auf und geben ab (geht ins Leere)
+    await Promise.all([H.booth(ps[1], 1), H.booth(ps[2], 1)]);
+    await Promise.all([H.waitScreen(ps[1], 'scr-wait', 30000), H.waitScreen(ps[2], 'scr-wait', 30000)]);
+    const whileOffline = await host.evaluate(() => ({ collected: collected.size, prog: players.map(p => p.done + '/' + p.total) }));
+    await H.sleep(32000);   // länger als die 30-s-Schonzeit
+    await host.evaluate(() => window.__hostZurueck());
+    await host.waitForFunction(() => players.length === 3 && !players.some(p => p.offline), null, { timeout: 120000 });
+    await host.waitForFunction(() => collected.size === 2, null, { timeout: 30000 });
+    const after = await host.evaluate(() => players.map(p => p.done + '/' + p.total));
+    const guestScreens = await Promise.all(ps.slice(1).map(H.screen));
+    if (guestScreens.some(x => x !== 'scr-wait')) throw new Error('Gast musste neu aufnehmen: ' + guestScreens);
+    await H.booth(host, 1);
+    await Promise.all(ps.map(p => H.waitScreen(p, 'scr-playback', 90000)));
+    const mixRoles = await host.evaluate(() => (finalTracksData || []).map(t => t.role + ':' + t.items.length).join(','));
+    return { whileOffline, after, guestScreens, mixRoles };
   });
   await scenario('ownvideo', async (b, reg) => {
     const { ps, host } = await H.room(b, 2); reg(ps);

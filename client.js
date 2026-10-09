@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.25.9";
+const APP_VERSION = "9.26.0";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -317,6 +317,22 @@ function onlinePlayers() { return players.filter(p => !p.offline); }
 function sendHost(msg) {
   if (isHost || !hostConn || !hostConn.open) return false;
   try { hostConn.send(msg); return true; } catch (e) { console.warn("sendHost:", e); return false; }
+}
+// Abgegebene Takes dieser Runde merken: Ist die Verbindung zum Host beim Abgeben gerade weg
+// (z. B. Host kurz offline), gingen sie sonst verloren — die Premiere hinge dann ewig.
+// Nach dem Wiederverbinden schickt nachreichen() sie nochmal (der Host ignoriert Doppelte).
+let meineAbgaben = [];
+function abgeben(msg) {
+  meineAbgaben.push(msg);
+  return sendHost(msg);
+}
+function nachreichen() {
+  if (isHost) return;
+  const ph = aktuellePhase();
+  if (!["scr-booth", "scr-wait", "scr-record"].includes(ph)) return;
+  if (ph === "scr-booth" && myLines.length) sendProgress(true);
+  else if (meineAbgaben.length) sendHost({ t: "progress", done: myLines.length, total: myLines.length });
+  for (const m of meineAbgaben) sendHost(Object.assign({}, m, { resend: true }));
 }
 function clearSceneCaches() {
   mixLoadToken++;
@@ -816,6 +832,21 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.0", items: [
+    "🎭 10 neue Stimm-Effekte: Dämon, Geist, Alien, Streifenhörnchen, Zittrig, Raumhelm/Maske, Kaputtes Funkgerät, Innere Stimme, Höhle, Arena — auch im Chaos-Modus",
+    "🗂 Effekt-Auswahl in der Kabine nach Gruppen sortiert (Stimme, Figuren, Geräte, Raum)",
+    "🔊 Funkgerät, Megafon, Monster, Titan, Telefon, Durchsage & Co. sind nicht mehr 5–8× lauter als die normale Stimme und übersteuern nicht mehr",
+    "🔌 Fix: Verliert der Host kurz das Internet, kommen Fortschritt und fertige Takes der anderen danach trotzdem an — keine hängenden Zähler, die Premiere startet",
+    "🔌 Gäste geben mitten in einer Runde nicht mehr auf, wenn der Host länger weg ist — sie klopfen weiter an, bis er zurück ist",
+    "🔌 Wer mitten in der Aufnahme kurz rausfliegt, macht danach einfach weiter statt von vorne"
+  ], itemsEn: [
+    "🎭 10 new voice effects: demon, ghost, alien, chipmunk, shaky, space helmet/mask, broken radio, inner voice, cave, arena — in chaos mode too",
+    "🗂 Effect picker in the booth sorted into groups (voice, characters, devices, room)",
+    "🔊 Walkie-talkie, megaphone, monster, titan, phone, PA & co. are no longer 5–8× louder than the normal voice and no longer clip",
+    "🔌 Fix: if the host briefly loses internet, everyone's progress and finished takes still arrive afterwards — no stuck counters, the premiere starts",
+    "🔌 Guests no longer give up mid-round when the host is gone for a while — they keep knocking until the host is back",
+    "🔌 If you drop out mid-recording, you just carry on afterwards instead of starting over"
+  ]},
   { v: "9.25.9", items: [
     "✏️ Neue Szenen: Untertitel aufgeräumt (kein „[Name]“ mehr davor) und deutsche Übersetzung von Hand verbessert"
   ], itemsEn: [
@@ -3327,6 +3358,7 @@ function gastBeitreten(code, wiederkehr, attempt, preferBroker) {
       // Handoff-Disconnect vorbei — ab hier bei Abbruch wieder normal nachfassen
       hostHandoffActive = false;
       sendHost({ t: "hello", name: stripHostTag(myName), avatar: myAvatar, accessory: myAccessory, key: myKey, micState: currentMicState() });
+      if (wiederkehr) nachreichen();
       if (wiederkehr) {
         wvBanner(tt("🔌 Reconnected — catching up …", "🔌 Wieder verbunden — hole den Stand …"));
       } else {
@@ -3421,6 +3453,15 @@ function planeWiederverbindung() {
   // deshalb mehr Versuche, bevor wir aufgeben.
   const maxVersuche = 25;
   if (wvVersuch >= maxVersuche) {
+    // Mitten in einer Runde nicht aufgeben: Hat der Host länger kein Internet, sollen die
+    // fertigen Takes ankommen, sobald er zurück ist — also alle 15 s weiter anklopfen.
+    if (["scr-booth", "scr-wait", "scr-record", "scr-playback"].includes(aktuellePhase())) {
+      wvBanner(tt("📴 Host unreachable — your takes are safe, still trying to get back in …", "📴 Host nicht erreichbar — deine Takes sind sicher, versuche weiter reinzukommen …"), true);
+      clearTimeout(wvTimer);
+      const prefer = (handoffBrokerIdx != null) ? handoffBrokerIdx : activeBrokerIdx;
+      wvTimer = setTimeout(() => gastBeitreten(raumCode, true, wvVersuch % JOIN_MAX_TRIES, prefer), 15000);
+      return;
+    }
     wvBanner(tt("❌ Can’t get back in. Is the host still running? ", "❌ Komme nicht mehr rein. Läuft der Host noch? ") + NETZ_TIP(), true);
     return;
   }
@@ -4986,6 +5027,9 @@ function matchPayload() {
 }
 
 // Nach Reload / Rausflug / Spätbeitritt: auf Host-Phase springen
+function gleicheSzene(s) {
+  return !!(s && scene && (s.id || s.title || s.videoUrl) === (scene.id || scene.title || scene.videoUrl));
+}
 function applyPhaseRestore(msg) {
   if (msg.match) {
     match.mode = msg.match.mode; match.rounds = msg.match.rounds;
@@ -5041,7 +5085,10 @@ function applyPhaseRestore(msg) {
         status("play-status", tt("🔌 Back in — premiere is running …", "🔌 Wieder drin — Premiere läuft …"));
       }
     }).catch(e => console.warn("Rejoin-Premiere:", e));
-  } else if (msg.phase === "scr-booth" && msg.takesDone) {
+  } else if (["scr-booth", "scr-wait", "scr-record"].includes(msg.phase) && meine === "scr-booth" && myLines.length && gleicheSzene(msg.scene)) {
+    // Mitten in der Aufnahme kurz weg gewesen (Seite nicht neu geladen) → einfach weitermachen
+    showToast(tt("🔌 Back in — just keep going!", "🔌 Wieder drin — mach einfach weiter!"), "join");
+  } else if (msg.phase === "scr-booth" && (msg.takesDone || (meineAbgaben.length && gleicheSzene(msg.scene)))) {
     // Eigene Takes liegen schon beim Host → nicht nochmal aufnehmen, nur auf die anderen warten
     show("scr-wait");
     renderBoothPlayers();
@@ -5248,7 +5295,10 @@ function handleMsg(msg, conn) {
       renderPremState();
       break;
     }
-    case "tracks": collectTracks(msg.role, attachTrackMeta(msg.items, msg), msg.outtakes, conn.peer); break;
+    case "tracks":
+      // Nachgereicht nach Wiederverbindung: nur nehmen, was noch fehlt — sonst startet die Premiere neu
+      if (msg.resend && (finalTracksData || collected.has(msg.role))) break;
+      collectTracks(msg.role, attachTrackMeta(msg.items, msg), msg.outtakes, conn.peer); break;
     case "trackUpdate": {
       const tm = msg.trackMeta || msg;
       if (msg.buf != null) {
@@ -5290,9 +5340,9 @@ function handleMsg(msg, conn) {
       if (msg.a && msg.a.k === "score") cbScore(conn.peer, msg.a.n);
       break;
     case "packInfo": collectPackInfo(conn.peer, msg); break;
-    case "duelSubmit": collectDuelSubmit(conn.peer, attachTrackMeta(msg.items, msg)); break;
+    case "duelSubmit": if (msg.resend && duelSubs[conn.peer]) break; collectDuelSubmit(conn.peer, attachTrackMeta(msg.items, msg)); break;
     case "duelVote": collectDuelVote(conn.peer, msg.choice); break;
-    case "teamSubmit": collectTeamSubmit(conn.peer, attachMetaToTracks(msg.tracks, msg)); break;
+    case "teamSubmit": if (msg.resend && teamSubs[conn.peer]) break; collectTeamSubmit(conn.peer, attachMetaToTracks(msg.tracks, msg)); break;
     case "teamVote": collectTeamVote(conn.peer, msg.stars); break;
 
     // — Gast ← Host —
@@ -6443,8 +6493,26 @@ const EFFECTS = {
   // Raum & Position -- fuer Figuren, die nicht direkt vor der Kamera stehen
   far: "far", veryfar: "veryfar", offscreen: "offscreen", behinddoor: "behinddoor",
   nextroom: "nextroom", above: "above", whisper: "whisper", shout: "shout",
-  crowd: "crowd", pa: "pa", tv: "tv", memory: "memory"
+  crowd: "crowd", pa: "pa", tv: "tv", memory: "memory",
+  // Charakter- & Spaß-Stimmen
+  demon: "demon", ghost: "ghost", alien: "alien", chipmunk: "chipmunk", vibrato: "vibrato",
+  helmet: "helmet", brokenradio: "brokenradio", inner: "inner", cave: "cave", arena: "arena"
 };
+// Gruppen für die Auswahllisten — 37 Effekte untereinander findet sonst keiner
+const EFFECT_GROUPS = [
+  [["Voice", "Stimme"], ["none", "studio", "whisper", "shout", "inner", "vibrato"]],
+  [["Characters", "Figuren"], ["helium", "chipmunk", "monster", "titan", "demon", "ghost", "alien", "robot", "chorus"]],
+  [["Devices", "Geräte"], ["telefon", "radio", "brokenradio", "megaphone", "pa", "tv", "helmet", "vintage_1990"]],
+  [["Room & distance", "Raum & Entfernung"], ["hall", "echo", "cave", "arena", "far", "veryfar", "offscreen", "behinddoor", "nextroom", "above", "crowd", "underwater", "memory"]],
+];
+function effectOptionsHtml() {
+  const seen = new Set();
+  let html = EFFECT_GROUPS.map(([[en, de], keys]) => `<optgroup label="${esc(tt(en, de))}">` +
+    keys.filter(k => EFFECTS[k]).map(k => { seen.add(k); return `<option value="${k}">${esc(effectLabel(k))}</option>`; }).join("") + `</optgroup>`).join("");
+  const rest = Object.keys(EFFECTS).filter(k => !seen.has(k));
+  if (rest.length) html += rest.map(k => `<option value="${k}">${esc(effectLabel(k))}</option>`).join("");
+  return html;
+}
 function effectLabel(key) {
   const k = key || "none";
   const map = {
@@ -6473,7 +6541,17 @@ function effectLabel(key) {
     crowd: tt("👥 In a crowd", "👥 In einer Menschenmenge"),
     pa: tt("📢 PA / loudspeaker announcement", "📢 Lautsprecher-Durchsage"),
     tv: tt("📺 From a TV / small speaker", "📺 Aus dem Fernseher / kleiner Box"),
-    memory: tt("💭 Memory / flashback", "💭 Erinnerung / Rückblende")
+    memory: tt("💭 Memory / flashback", "💭 Erinnerung / Rückblende"),
+    demon: tt("😈 Demon (deep + growl + echo)", "😈 Dämon (tief + Knurren + Hall)"),
+    ghost: tt("👻 Ghost (airy + eerie)", "👻 Geist (hauchig + unheimlich)"),
+    alien: tt("👽 Alien", "👽 Alien"),
+    chipmunk: tt("🐿 Chipmunk (very high)", "🐿 Streifenhörnchen (sehr hoch)"),
+    vibrato: tt("😨 Shaky / trembling", "😨 Zittrig / ängstlich"),
+    helmet: tt("🧑‍🚀 Space helmet / mask", "🧑‍🚀 Raumhelm / Maske"),
+    brokenradio: tt("📻 Broken radio (crackly, cutting out)", "📻 Kaputtes Funkgerät (knackt, bricht ab)"),
+    inner: tt("🧠 Inner voice / thoughts", "🧠 Innere Stimme / Gedanken"),
+    cave: tt("🕳 Cave / tunnel", "🕳 Höhle / Tunnel"),
+    arena: tt("🏟 Arena / stadium", "🏟 Arena / Stadion")
   };
   return map[k] || k;
 }
@@ -6918,7 +6996,7 @@ function addRoleCfg() {
   div.innerHTML = `
     <input type="text" placeholder="${tt("Character", "Charakter")} ${n}" value="${tt("Character", "Charakter")} ${n}">
     <div><label class="small">${tt("Pan L↔R", "Pan L↔R")}</label><input type="range" min="-1" max="1" step="0.1" value="0"></div>
-    <select>${Object.keys(EFFECTS).map((k) => `<option value="${k}">${esc(effectLabel(k))}</option>`).join("")}</select>`;
+    <select>${effectOptionsHtml()}</select>`;
   $("rolecfg-list").appendChild(div);
 }
 $("btn-add-role").onclick = addRoleCfg;
@@ -7304,7 +7382,8 @@ function broadcastSettings() {
 // jedem Start neu würfelt und mit den Einstellungen verschickt: im Team-Battle haben so
 // beide Teams für dieselbe Zeile denselben Effekt (fair), jede Runde ist aber neu.
 // ═════════════════════════════════════════════════════════════
-const CHAOS_EFFECTS = ["helium", "monster", "robot", "telefon", "radio", "underwater", "titan", "megaphone", "echo", "chorus", "vintage_1990", "tv", "pa"];
+const CHAOS_EFFECTS = ["helium", "monster", "robot", "telefon", "radio", "underwater", "titan", "megaphone", "echo", "chorus", "vintage_1990", "tv", "pa",
+  "demon", "ghost", "alien", "chipmunk", "vibrato", "helmet", "brokenradio", "cave", "arena"];
 function chaosEffectFor(idx) {
   const key = (match.chaosSeed || 0) + "|" + ((scene && scene.id) || (scene && scene.title) || "") + "|" + idx;
   return CHAOS_EFFECTS[hashStr(key) % CHAOS_EFFECTS.length];
@@ -8184,8 +8263,12 @@ function nochInSchonzeit(p) {
 /** Rollen, auf deren Aufnahme die Premiere warten muss. */
 function benoetigteRollen() {
   const s = new Set();
+  // Sind ALLE anderen gleichzeitig weg, liegt es fast sicher am Host selbst (sein Internet
+  // war weg) — dann auf alle warten, sonst startet die Premiere nur mit der Host-Spur.
+  const andere = players.filter(p => p.id !== myId);
+  const hostSelbstWeg = andere.length > 0 && andere.every(p => p.offline);
   players.forEach(p => {
-    if (p.offline && !nochInSchonzeit(p)) return;   // lange weg → nicht mehr warten
+    if (p.offline && !hostSelbstWeg && !nochInSchonzeit(p)) return;   // lange weg → nicht mehr warten
     rolesOfPlayer(p).forEach(r => s.add(r));
   });
   return s;
@@ -8310,7 +8393,7 @@ function startBooth() {
   // sie in einem Durchgang nacheinander ab. Die Zuordnung steckt in l.chars.
   const meineRollen = myRoles();
   myLines = scene.lines.map((l, i) => ({ ...l, idx: i })).filter(l => l.chars.some(c => meineRollen.includes(c)));
-  curLine = 0; takes = {}; outtakes = []; myEffectOverrides = {}; myEffectAmounts = {}; myLineGains = {}; myLinePans = {};
+  curLine = 0; takes = {}; outtakes = []; meineAbgaben = []; myEffectOverrides = {}; myEffectAmounts = {}; myLineGains = {}; myLinePans = {};
   if (match.chaos) myLines.forEach(l => { myEffectOverrides[l.idx] = chaosEffectFor(l.idx); });
   const r = roleOf(rid);
   $("booth-rolename").textContent = meineRollen.length > 1
@@ -8398,7 +8481,7 @@ function renderLine() {
       ? tt("Normal (role FX off)", "Normal (Rollen-Effekt aus)")
       : effectLabel(sceneDefault);
     efSel.innerHTML = `<option value="">🎭 ${esc(tt("Default", "Standard"))} (${esc(stdLabel)})</option>` +
-      Object.keys(EFFECTS).map((k) => `<option value="${k}">${esc(effectLabel(k))}</option>`).join("");
+      effectOptionsHtml();
     efSel.value = myEffectOverrides[l.idx] || "";
   }
   const sx = $("strip-role-fx");
@@ -9292,13 +9375,13 @@ function finishBooth() {
   if (match.mode === "team" && teamInfo) {
     const tracks = tracksByRole(items);
     if (isHost) collectTeamSubmit(myId, tracks);
-    else sendHost({ t: "teamSubmit", tracks, ...metaMapsFromTracks(tracks) });
+    else abgeben({ t: "teamSubmit", tracks, ...metaMapsFromTracks(tracks) });
     status("wait-status", tt("⚔ Your take is in the can! Waiting for both teams …", "⚔ Dein Take ist im Kasten! Warte auf beide Teams …"));
     return;
   }
   if (match.mode === "duell" && duelInfo) {
     if (isHost) collectDuelSubmit(myId, items);
-    else sendHost({ t: "duelSubmit", playerId: myId, items, boostByIdx, panByIdx });
+    else abgeben({ t: "duelSubmit", playerId: myId, items, boostByIdx, panByIdx });
     status("wait-status", tt("🥊 Your take is in the can! Waiting for the other duelist …", "🥊 Dein Take ist im Kasten! Warte auf den anderen Duellanten …"));
     return;
   }
@@ -9320,7 +9403,7 @@ function finishBooth() {
     // Outtakes nur EINMAL mitschicken, sonst landet jeder Versprecher mehrfach im Topf
     const otsFuerDiese = ersteRolle ? ots : [];
     if (isHost) collectTracks(rid, teil, otsFuerDiese, myId);
-    else sendHost({ t: "tracks", role: rid, items: teil, boostByIdx: boostMapFromItems(teil), panByIdx: panMapFromItems(teil), outtakes: otsFuerDiese });
+    else abgeben({ t: "tracks", role: rid, items: teil, boostByIdx: boostMapFromItems(teil), panByIdx: panMapFromItems(teil), outtakes: otsFuerDiese });
     ersteRolle = false;
   }
 }
@@ -9373,7 +9456,7 @@ async function startRealtime() {
   await countdown();
   if (stale()) return;
   $("onair").classList.add("live");
-  rtChunks = [];
+  rtChunks = []; meineAbgaben = [];
   rtRecorder = voiceRecorder();
   rtRecorder.ondataavailable = e => { if (e.data.size) rtChunks.push(e.data); };
   rtRecorder.onstop = async () => {
@@ -9383,7 +9466,7 @@ async function startRealtime() {
     if (stale()) return;
     const items = [{ startAt: 0, buf }];
     if (isHost) collectTracks(myRole(), items);
-    else sendHost({ t: "tracks", role: myRole(), items });
+    else abgeben({ t: "tracks", role: myRole(), items });
   };
   v.currentTime = 0;
   await playMedia(v);
@@ -10239,7 +10322,7 @@ function backToLobby(keepMatch) {
   const c = $("cinema-curtains"); if (c) c.classList.remove("show", "open");
   if (!keepMatch) { match.round = 1; match.totals = {}; match.buddyGivers = {}; myBuddyUsed = false; }
   players.forEach(p => { p.ready = false; p.done = 0; p.total = 0; p.prem = false; p.premPct = 0; });
-  mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; outtakesCache = null;
+  mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; meineAbgaben = []; outtakesCache = null;
   finalTracksData = null; premiereLocked = false; redoMode = null; premWatched = false;
   clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null;
   resetPremPlayerGains();
@@ -13951,6 +14034,146 @@ function buildChain(ctx, role, dest) {
       node.connect(lim); node = lim;
       break;
     }
+    case "demon": {
+      // Dämon: tiefer gespielt (s. effectPitch), Knurren per langsamer Ringmodulation,
+      // Verzerrung und eine dunkle Hallfahne — klingt nach „Stimme aus der Unterwelt“
+      filt("lowpass", 2600); filt("peaking", 110, 1.4, 6);
+      const rm = ctx.createGain(); rm.gain.value = 0.5;
+      const rmDc = ctx.createGain(); rmDc.gain.value = 0.6;
+      const rmLfo = ctx.createOscillator(); rmLfo.type = "sine"; rmLfo.frequency.value = 55;
+      rmLfo.connect(rm.gain);
+      node.connect(rm); node.connect(rmDc);
+      const rmMix = ctx.createGain(); rm.connect(rmMix); rmDc.connect(rmMix);
+      node = rmMix;
+      try { rmLfo.start(); lfos.push(rmLfo); } catch {}
+      node = chainShaper(ctx, node, 26);
+      const ddry = ctx.createGain(); ddry.gain.value = 0.85;
+      const dwet = ctx.createGain(); dwet.gain.value = 0.4;
+      const ddl = ctx.createDelay(); ddl.delayTime.value = 0.14;
+      const dfb = ctx.createGain(); dfb.gain.value = 0.42;
+      const dlp = ctx.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 1100;
+      node.connect(ddry); node.connect(ddl); ddl.connect(dlp); dlp.connect(dfb); dfb.connect(ddl); dlp.connect(dwet);
+      const dmix = ctx.createGain(); dmix.gain.value = 0.85; ddry.connect(dmix); dwet.connect(dmix);
+      node = dmix;
+      break;
+    }
+    case "ghost": {
+      // Geist: ohne Körper (kaum Tiefen), schwebend (Doppelgänger-LFO) und lange, helle Fahne
+      filt("highpass", 420, 0.7); filt("peaking", 3200, 1, 4);
+      const gdl1 = ctx.createDelay(); gdl1.delayTime.value = 0.03;
+      const gLfo = ctx.createOscillator(); gLfo.type = "sine"; gLfo.frequency.value = 0.35;
+      const gDepth = ctx.createGain(); gDepth.gain.value = 0.012;
+      gLfo.connect(gDepth); gDepth.connect(gdl1.delayTime);
+      try { gLfo.start(); lfos.push(gLfo); } catch {}
+      const gdry = ctx.createGain(); gdry.gain.value = 0.6;
+      const gch = ctx.createGain(); gch.gain.value = 0.5;
+      node.connect(gdry); node.connect(gdl1); gdl1.connect(gch);
+      const gsum = ctx.createGain(); gdry.connect(gsum); gch.connect(gsum);
+      node = gsum;
+      const gwet = ctx.createGain(); gwet.gain.value = 0.55;
+      const gdl = ctx.createDelay(); gdl.delayTime.value = 0.19;
+      const gfb = ctx.createGain(); gfb.gain.value = 0.55;
+      const ghp = ctx.createBiquadFilter(); ghp.type = "highpass"; ghp.frequency.value = 700;
+      node.connect(gdl); gdl.connect(ghp); ghp.connect(gfb); gfb.connect(gdl); ghp.connect(gwet);
+      const gmix = ctx.createGain(); gmix.gain.value = 0.9; node.connect(gmix); gwet.connect(gmix);
+      node = gmix;
+      break;
+    }
+    case "alien": {
+      // Alien: Ringmodulation mit Sinus — metallisch-fremd, aber noch verständlich
+      const am = ctx.createGain(); am.gain.value = 0;
+      const amLfo = ctx.createOscillator(); amLfo.type = "sine"; amLfo.frequency.value = 170;
+      amLfo.connect(am.gain);
+      try { amLfo.start(); lfos.push(amLfo); } catch {}
+      const adry = ctx.createGain(); adry.gain.value = 0.45;
+      node.connect(am); node.connect(adry);
+      const amix = ctx.createGain(); am.connect(amix); adry.connect(amix);
+      node = amix;
+      filt("highpass", 160); filt("peaking", 2400, 1.4, 5);
+      break;
+    }
+    case "chipmunk":
+      // Noch höher als Helium (Tonhöhe über effectPitch) — dünn und quietschig
+      filt("highpass", 260); filt("peaking", 4200, 1, 5);
+      break;
+    case "vibrato": {
+      // Zittrig: die Tonhöhe schwankt schnell leicht hin und her (modulierte Verzögerung)
+      // plus etwas Lautstärke-Zittern — wie eine ängstliche oder alte Stimme
+      const vdl = ctx.createDelay(); vdl.delayTime.value = 0.008;
+      const vLfo = ctx.createOscillator(); vLfo.type = "sine"; vLfo.frequency.value = 6.5;
+      const vDepth = ctx.createGain(); vDepth.gain.value = 0.0028;
+      vLfo.connect(vDepth); vDepth.connect(vdl.delayTime);
+      const trem = ctx.createGain(); trem.gain.value = 0.85;
+      const tDepth = ctx.createGain(); tDepth.gain.value = 0.15;
+      vLfo.connect(tDepth); tDepth.connect(trem.gain);
+      try { vLfo.start(); lfos.push(vLfo); } catch {}
+      node.connect(vdl); vdl.connect(trem); node = trem;
+      break;
+    }
+    case "helmet": {
+      // Raumhelm / Maske: enger Kammfilter (sehr kurze Rückkopplung) = Klang im geschlossenen Visier
+      filt("highpass", 220); filt("lowpass", 4200);
+      const hdl = ctx.createDelay(); hdl.delayTime.value = 0.0045;
+      const hfb = ctx.createGain(); hfb.gain.value = 0.55;
+      const hsum = ctx.createGain(); hsum.gain.value = 0.45;
+      node.connect(hsum); node.connect(hdl); hdl.connect(hfb); hfb.connect(hdl); hdl.connect(hsum);
+      node = hsum;
+      filt("peaking", 1300, 1.2, 4);
+      node = chainShaper(ctx, node, 6);
+      break;
+    }
+    case "brokenradio": {
+      // Kaputtes Funkgerät: schmal, stark verzerrt, und die Verbindung bricht rhythmisch weg
+      filt("highpass", 500); filt("lowpass", 2600); filt("peaking", 1400, 2, 8);
+      node = chainShaper(ctx, node, 40);
+      const gate = ctx.createGain(); gate.gain.value = 0.65;
+      const gLfo2 = ctx.createOscillator(); gLfo2.type = "square"; gLfo2.frequency.value = 2.3;
+      const gDepth2 = ctx.createGain(); gDepth2.gain.value = 0.35;
+      gLfo2.connect(gDepth2); gDepth2.connect(gate.gain);
+      const flick = ctx.createOscillator(); flick.type = "sawtooth"; flick.frequency.value = 7.7;
+      const fDepth = ctx.createGain(); fDepth.gain.value = 0.12;
+      flick.connect(fDepth); fDepth.connect(gate.gain);
+      try { gLfo2.start(); flick.start(); lfos.push(gLfo2, flick); } catch {}
+      node.connect(gate); node = gate;
+      break;
+    }
+    case "inner": {
+      // Innere Stimme: nah und weich, leicht verdoppelt und mit kurzem, hellem Raum —
+      // klingt „im Kopf“ statt im Bild
+      filt("highpass", 160); filt("peaking", 3000, 0.9, 2.5); filt("highshelf", 9000, 0.7, -3);
+      const ic = ctx.createDynamicsCompressor();
+      ic.threshold.value = -28; ic.knee.value = 12; ic.ratio.value = 3.5; ic.attack.value = 0.005; ic.release.value = 0.15;
+      node.connect(ic); node = ic;
+      const idl = ctx.createDelay(); idl.delayTime.value = 0.012;
+      const iwet = ctx.createGain(); iwet.gain.value = 0.35;
+      const idl2 = ctx.createDelay(); idl2.delayTime.value = 0.07;
+      const ifb = ctx.createGain(); ifb.gain.value = 0.3;
+      const iw2 = ctx.createGain(); iw2.gain.value = 0.28;
+      const imix = ctx.createGain(); imix.gain.value = 0.75;
+      node.connect(imix); node.connect(idl); idl.connect(iwet); iwet.connect(imix);
+      node.connect(idl2); idl2.connect(ifb); ifb.connect(idl2); idl2.connect(iw2); iw2.connect(imix);
+      node = imix;
+      break;
+    }
+    case "cave":
+    case "arena": {
+      // Höhle: dunkle, lange Wiederholungen. Arena: mehrere helle Reflexionen + großer Raum.
+      const big = role.effect === "arena";
+      filt("highpass", big ? 140 : 90); if (!big) filt("lowpass", 3800);
+      const out = ctx.createGain(); out.gain.value = big ? 0.8 : 0.85;
+      const cdry = ctx.createGain(); cdry.gain.value = big ? 0.7 : 0.75;
+      node.connect(cdry); cdry.connect(out);
+      const taps = big ? [[0.06, 0.32], [0.13, 0.26], [0.21, 0.2]] : [[0.32, 0.42]];
+      for (const [t, g] of taps) {
+        const d = ctx.createDelay(1); d.delayTime.value = t;
+        const fb = ctx.createGain(); fb.gain.value = big ? 0.38 : 0.52;
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = big ? 3200 : 1500;
+        const w = ctx.createGain(); w.gain.value = g;
+        node.connect(d); d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(w); w.connect(out);
+      }
+      node = out;
+      break;
+    }
     case "titan":
       // Sehr tiefe, bedrohliche Stimme -- staerkerer Bruder von "monster", mit mehr Growl
       filt("lowpass", 1300); filt("peaking", 90, 1.6, 9);
@@ -13983,9 +14206,19 @@ function effectPitch(effect) {
   if (effect === "helium") return 1.35;
   if (effect === "monster") return 0.72;
   if (effect === "titan") return 0.6;
+  if (effect === "chipmunk") return 1.6;
+  if (effect === "demon") return 0.8;
+  if (effect === "alien") return 1.08;
   return 1;
 }
-function chainShaper(ctx, node, amount) { const s = shaper(ctx, amount); node.connect(s); return s; }
+// Die Verzerrung verstärkt leise Signale um bis zu (3+amount)/2 — Funkgerät & Co. waren dadurch
+// 5–8× lauter als die normale Stimme und übersteuerten. Ausgleich danach hält sie etwa gleich laut.
+function chainShaper(ctx, node, amount) {
+  const s = shaper(ctx, amount); node.connect(s);
+  const makeup = ctx.createGain(); makeup.gain.value = 1 / (1 + amount * 0.16);
+  s.connect(makeup);
+  return makeup;
+}
 function shaper(ctx, amount) {
   const ws = ctx.createWaveShaper();
   const n = 1024, curve = new Float32Array(n);
@@ -14044,7 +14277,7 @@ function resetForNewRound() {
     p.ready = false; p.done = 0; p.total = 0; p.prem = false; p.premPct = 0;
     p.loadPct = 0; p.videoReady = false;
   });
-  mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; outtakesCache = null;
+  mixItems = []; collected.clear(); collectedOuttakes.clear(); takes = {}; outtakes = []; meineAbgaben = []; outtakesCache = null;
   clearTimeout(outtakesPrecacheTimer); outtakesPrecacheTimer = null; premWatched = false;
   outtakeAbort = true; outtakesPlaying = false; outtakesQuietJob = false;
   outtakesSaveWhenReady = false; outtakesDidSaveBlob = false;

@@ -26,6 +26,8 @@ Szenarien: `free3` (3 Spieler, Mehrfachrolle, Zuschauer), `match` (2 Runden bis 
 mitten in der Aufnahme), `handoff` / `matchhandoff` (Host weitergeben, neuer Host führt die
 Runde), `pack` / `packogv` (lokale Packs), `blind`, `daily` (Szene des Tages laden),
 `latejoin`, `kick`, `drop` (Verbindungsabbruch + automatisches Wiederverbinden),
+`dropdone` (wer fertig ist und neu lädt, muss nicht nochmal aufnehmen), `hostdrop` (Host kurz
+offline, Gäste geben in der Zeit ab — alles muss danach ankommen),
 `ownvideo` (eigenes Video, Echtzeit-Aufnahme), `ttt` (TicTacToe in der Warte-Arena).
 
 Jedes Szenario gibt JSON aus (`ok`, Ergebnis-Texte, Konsolenfehler aller Fenster);
