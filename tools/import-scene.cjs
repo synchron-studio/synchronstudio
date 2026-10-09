@@ -37,10 +37,16 @@ class ImportError extends Error {}
 
 // Jede Archiv-Datei, auch Teile mehrteiliger Archive (x.7z.001, x.part2.rar, x.z01 …)
 const ARCHIVE_RE = /(\.(zip|rar|7z)(\.\d{2,3})?|\.z\d\d|\.r\d\d)$/i;
+const ARCHIVE_TOOLS = (zipFile, dir) => [
+  ['7zz', ['x', '-y', '-bd', '-o' + dir, zipFile]],          // aktuelles 7-Zip (kann RAR5)
+  ['7z', ['x', '-y', '-bd', '-o' + dir, zipFile]],
+  ['unrar', ['x', '-o+', '-idq', zipFile, dir + '/']],
+  ['unar', ['-q', '-f', '-o', dir, zipFile]],
+];
 /** Mit welcher Datei fängt ein (ggf. mehrteiliges) Archiv an? Nur die wird entpackt, 7z holt die Teile dazu. */
 function isFirstArchive(n) {
   let m;
-  if ((m = /\.part0*(\d+)\.rar$/i.exec(n))) return +m[1] === 1;
+  if ((m = /part0*(\d+)\.rar$/i.exec(n))) return +m[1] === 1;          // auch „…minutespart1.rar“
   if ((m = /\.(zip|rar|7z)\.(\d{2,3})$/i.exec(n))) return +m[2] === 1;
   return /\.(zip|rar|7z)$/i.test(n);
 }
@@ -50,14 +56,22 @@ function extract(zipFile) {
   // Geteiltes ZIP (x.zip + x.z01 …) kann unzip nicht — dann auch 7z
   const isZip = /\.zip$/i.test(zipFile) && !fs.existsSync(zipFile.replace(/\.zip$/i, '.z01'));
   // ZIP mit unzip; RAR/7z (so liegen viele GameBanana-Packs vor) mit 7z, sonst unar
-  const tries = isZip ? [['unzip', ['-qq', '-o', zipFile, '-d', dir]]]
-    : [['7z', ['x', '-y', '-bd', '-o' + dir, zipFile]], ['unar', ['-q', '-f', '-o', dir, zipFile]]];
+  const tries = isZip ? [['unzip', ['-qq', '-o', zipFile, '-d', dir]], ...ARCHIVE_TOOLS(zipFile, dir)] : ARCHIVE_TOOLS(zipFile, dir);
+  const errs = [];
   for (const [cmd, args] of tries) {
-    try { cp.execFileSync(cmd, args, { stdio: 'pipe' }); break; } catch { /* nächstes Werkzeug / Warnung, prüfen unten */ }
+    try { cp.execFileSync(cmd, args, { stdio: 'pipe', maxBuffer: 1 << 26 }); if (fs.readdirSync(dir).length) break; }
+    catch (e) {
+      // unzip meldet z. B. bei Warnungen Exit-Code 1, entpackt aber trotzdem
+      if (fs.readdirSync(dir).length) break;
+      errs.push(`${cmd}: ${e.code === 'ENOENT' ? 'nicht installiert' : String(e.stderr || e.stdout || e.message).trim().split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 200)}`);
+    }
   }
-  // unzip meldet z. B. bei Warnungen Exit-Code 1, entpackt aber trotzdem
   if (!fs.readdirSync(dir).length) {
-    throw new ImportError(`Das Archiv ließ sich nicht öffnen (beschädigt oder kein ${isZip ? 'ZIP' : 'RAR/7z'}).`);
+    // Was ist das eigentlich? (z. B. eine HTML-Fehlerseite statt des Archivs)
+    let kind = '';
+    try { kind = cp.execFileSync('file', ['-b', zipFile], { encoding: 'utf8' }).trim(); } catch {}
+    const size = (() => { try { return (fs.statSync(zipFile).size / 1048576).toFixed(1) + ' MB'; } catch { return '?'; } })();
+    throw new ImportError(`Das Archiv ließ sich nicht öffnen (beschädigt oder kein ${isZip ? 'ZIP' : 'RAR/7z'}).\nDatei: ${path.basename(zipFile)}, ${size}${kind ? ', Typ: ' + kind : ''}\n${errs.join('\n')}`);
   }
   // Liegt alles in einem Unterordner (z. B. „meine_szene/scene.json“ oder ein Choicer-Voicer-Pack
   // „Reze s Conspiracy Lesson/_pack_info.ini“)? Dann den nehmen.
@@ -620,7 +634,8 @@ function autoTranslate(lines, notes) {
 // Archive behandeln. Heruntergeladenes wird nie gespeichert (kann > 100 MB sein) — nur das Ergebnis.
 const LINKS_FILE = path.join(IMPORT_DIR, 'links.txt');
 function curl(args) {
-  return cp.execFileSync('curl', ['-fsSL', '--retry', '3', '-m', '600', '-A', 'Synchronstudio-Import', ...args], { maxBuffer: 1 << 26 });
+  // Große Teile (mehrere 100 MB) brauchen Zeit — bis zu 1 h pro Datei, bei Abbruch dort weitermachen
+  return cp.execFileSync('curl', ['-fsSL', '--retry', '5', '--retry-delay', '10', '--retry-all-errors', '-C', '-', '-m', '3600', '-A', 'Mozilla/5.0 (Synchronstudio-Import)', ...args], { maxBuffer: 1 << 26 });
 }
 function fetchLinks(failed, summary) {
   if (!fs.existsSync(LINKS_FILE)) return [];
@@ -646,7 +661,8 @@ function fetchLinks(failed, summary) {
         const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dl-'));
         for (const f of files) {
           const safe = path.basename(f._sFile).replace(/[^\w.\- ]+/g, '_');
-          curl(['-o', path.join(dlDir, safe), f._sDownloadUrl]);
+          try { curl(['-o', path.join(dlDir, safe), f._sDownloadUrl]); }
+          catch (e) { throw new ImportError(`Download von ${f._sFile} (${((f._nFilesize || 0) / 1048576).toFixed(0)} MB) fehlgeschlagen: ${String(e.stderr || e.message).trim().split('\n').pop().slice(0, 200)}`); }
         }
         const firsts = fs.readdirSync(dlDir).filter(isFirstArchive).map(n => path.join(dlDir, n));
         if (!firsts.length) throw new ImportError('Heruntergeladen, aber kein Anfang eines Archivs gefunden (Teil 1 fehlt?).');

@@ -41,7 +41,12 @@ jobs:
           df -h / | tail -1
           npm ci --ignore-scripts --no-audit --no-fund
           # ffmpeg für Videos; 7z/unar für RAR- und 7z-Packs (GameBanana)
-          (command -v ffmpeg && command -v 7z && command -v unar) >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg p7zip-full unar >/dev/null)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg p7zip-full unar >/dev/null
+          # Neues 7-Zip (7zz, kann RAR5) und unrar — einzeln, damit ein fehlendes Paket nicht alles stoppt
+          sudo apt-get install -y -qq 7zip >/dev/null || true
+          sudo apt-get install -y -qq unrar >/dev/null || true
+          for t in 7zz 7z unrar unar ffmpeg; do printf '%s: ' $t; command -v $t || echo fehlt; done
 
       - name: Szenen einbauen
         id: import
