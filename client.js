@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.5";
+const APP_VERSION = "9.26.7";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -837,38 +837,62 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
-  { v: "9.26.5", items: [
-    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5",
-    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5",
-    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 3/5",
-    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 4/5",
-    "🎬 Neue Szene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5"
+  { v: "9.26.7", items: [
+    "🔊 Premiere: Lädt das Video kurz nach, warten die Stimmen jetzt mit — vorher lief der Rest der Szene versetzt",
+    "🔊 Premiere: Schutz gegen Übersteuern (Kratzen) bei lauten Stellen, vielen Stimmen oder Gesamt-Lautstärke über 100 %",
+    "🔊 Kein Knacken mehr am Ende einer Zeile (sanftes Aus- und Einblenden)",
+    "🔊 „Nur Ton speichern“ übernimmt jetzt die Regler (Stimmen, Musik, Gesamt, Mitspieler) — vorher wurden sie ignoriert",
+    "🎚 Auto-Ausgleich misst nur noch, wo wirklich gesprochen wird — kurze Takes wurden vorher viel zu laut",
+    "🛠 Editor: Knopf „Play Vocals Only“, Zeilen-Ton kommt jetzt immer aus der Vocals-Spur und in hörbarer Lautstärke",
+    "🛠 Editor: Auto-Split findet die Zeilen mit Vocals-Spur viel genauer; ohne Backing-Track bleibt die Hintergrundmusik zwischen den Zeilen erhalten",
+    "✏️ Untertitel & deutsche Übersetzung überarbeitet: Isagi's First Goal, Cyberpunk Edgerunners, Chainsaw Man Funny Moments, Death Note"
   ], itemsEn: [
-    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5",
-    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5",
-    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 3/5",
-    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 4/5",
-    "🎬 New scene: Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5"
+    "🔊 Premiere: if the video buffers, the voices now wait too — before, the rest of the scene ran out of sync",
+    "🔊 Premiere: protection against clipping on loud parts, many voices or master volume above 100%",
+    "🔊 No more click at the end of a line (short fade out/in)",
+    "🔊 “Save audio only” now uses the sliders (voices, music, master, players) — they were ignored before",
+    "🎚 Auto-balance only measures where someone actually speaks — short takes got far too loud before",
+    "🛠 Editor: “Play Vocals Only” button; line audio now always comes from the vocals track at an audible level",
+    "🛠 Editor: auto-split finds lines much more precisely with a vocals track; without a backing track the music between lines is kept",
+    "✏️ Subtitles & German translation polished: Isagi's First Goal, Cyberpunk Edgerunners, Chainsaw Man Funny Moments, Death Note"
+  ]},
+  { v: "9.26.6", items: [
+    "🎬 Neue Szene: Demon Slayer — Akaza Entrance"
+  ], itemsEn: [
+    "🎬 New scene: Demon Slayer — Akaza Entrance"
+  ]},
+  { v: "9.26.5", items: [
+    "🎬 Neue Szene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 1/5",
+    "🎬 Neue Szene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 2/5",
+    "🎬 Neue Szene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 3/5",
+    "🎬 Neue Szene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 4/5",
+    "🎬 Neue Szene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5"
+  ], itemsEn: [
+    "🎬 New scene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 1/5",
+    "🎬 New scene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 2/5",
+    "🎬 New scene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 3/5",
+    "🎬 New scene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 4/5",
+    "🎬 New scene: Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5"
   ]},
   { v: "9.26.4", items: [
-    "🎬 Neue Szene: Cyberpunk Edgerunners Finale"
+    "🎬 Neue Szene: Cyberpunk: Edgerunners — Finale"
   ], itemsEn: [
-    "🎬 New scene: Cyberpunk Edgerunners Finale"
+    "🎬 New scene: Cyberpunk: Edgerunners — Finale"
   ]},
   { v: "9.26.3", items: [
-    "🎬 Neue Szene: Chainsaw man funny momments"
+    "🎬 Neue Szene: Chainsaw Man — Funny Moments"
   ], itemsEn: [
-    "🎬 New scene: Chainsaw man funny momments"
+    "🎬 New scene: Chainsaw Man — Funny Moments"
   ]},
   { v: "9.26.2", items: [
-    "🎬 Neue Szene: Death note- Youre god"
+    "🎬 Neue Szene: Death Note — You're God"
   ], itemsEn: [
-    "🎬 New scene: Death note- Youre god"
+    "🎬 New scene: Death Note — You're God"
   ]},
   { v: "9.26.1", items: [
-    "🎬 Neue Szene: Isagis First Goal"
+    "🎬 Neue Szene: Blue Lock — Isagi's First Goal"
   ], itemsEn: [
-    "🎬 New scene: Isagis First Goal"
+    "🎬 New scene: Blue Lock — Isagi's First Goal"
   ]},
   { v: "9.26.0", items: [
     "🎭 10 neue Stimm-Effekte: Dämon, Geist, Alien, Streifenhörnchen, Zittrig, Raumhelm/Maske, Kaputtes Funkgerät, Innere Stimme, Höhle, Arena — auch im Chaos-Modus",
@@ -2197,43 +2221,46 @@ const AVATAR_CHARS = [
   { img: "scenes/demon_slayer_hashira_training_drill_sane/obanai.png", label: "Obanai · Demon Slayer — Hashira Training" },
   { img: "scenes/demon_slayer_hashira_training_drill_sane/muichiro.png", label: "Muichiro · Demon Slayer — Hashira Training" },
   { img: "scenes/demon_slayer_hashira_training_drill_sane/kasugai_crow.png", label: "Kasugai Crow · Demon Slayer — Hashira Training" },
-  { img: "scenes/isagis_first_goal/okuhito.png", label: "Okuhito · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/raichi.png", label: "Raichi · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/naruhaya.png", label: "Naruhaya · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/random_bum.png", label: "Random bum · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/isagi.png", label: "Isagi · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/niko.png", label: "Niko · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/kunigami.png", label: "Kunigami · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/random_bum_2.png", label: "Random Bum 2 · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/random_bum_3.png", label: "Random Bum 3 · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/bachira.png", label: "Bachira · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/gagamaru.png", label: "Gagamaru · Isagis First Goal" },
-  { img: "scenes/isagis_first_goal/igarashi.png", label: "Igarashi · Isagis First Goal" },
-  { img: "scenes/death_note_youre_god/teru_mikami.png", label: "Teru Mikami · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/light_yagami.png", label: "Light Yagami · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/koshi.png", label: "Koshi · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/tv_announcer.png", label: "TV announcer · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/matsuda.png", label: "Matsuda · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/hideki_ide.png", label: "Hideki Ide · Death note- Youre god" },
-  { img: "scenes/death_note_youre_god/takada.png", label: "Takada · Death note- Youre god" },
-  { img: "scenes/chainsaw_man_funny_momments/makima.png", label: "Makima · Chainsaw man funny momments" },
-  { img: "scenes/chainsaw_man_funny_momments/denji.png", label: "Denji · Chainsaw man funny momments" },
-  { img: "scenes/chainsaw_man_funny_momments/aki.png", label: "Aki · Chainsaw man funny momments" },
-  { img: "scenes/chainsaw_man_funny_momments/power.png", label: "Power · Chainsaw man funny momments" },
-  { img: "scenes/chainsaw_man_funny_momments/hirokazu.png", label: "Hirokazu · Chainsaw man funny momments" },
-  { img: "scenes/chainsaw_man_funny_momments/himeno.png", label: "Himeno · Chainsaw man funny momments" },
-  { img: "scenes/cyberpunk_edgerunners_finale/david.png", label: "David · Cyberpunk Edgerunners Finale" },
-  { img: "scenes/cyberpunk_edgerunners_finale/falco.png", label: "Falco · Cyberpunk Edgerunners Finale" },
-  { img: "scenes/cyberpunk_edgerunners_finale/adam_smasher.png", label: "Adam Smasher · Cyberpunk Edgerunners Finale" },
-  { img: "scenes/cyberpunk_edgerunners_finale/lucy.png", label: "Lucy · Cyberpunk Edgerunners Finale" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/tanjiro.png", label: "Tanjiro · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/giyu.png", label: "Giyu · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akaza_and_hakuji.png", label: "Akaza and Hakuji · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 1/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/keizo_aka_dojo_mentor.png", label: "Keizo aka Dojo Mentor · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 2/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akazas_dad.png", label: "Akazas Dad · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/muzan.png", label: "Muzan · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/koyuki_aka_akazas_wife.png", label: "Koyuki aka Akazas wife · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
-  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/crow.png", label: "Crow · Giyu and Tanjiro vs Akaza FULL FIGHT 44 minutes — Teil 5/5" },
+  { img: "scenes/isagis_first_goal/okuhito.png", label: "Okuhito (Lemon) · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/raichi.png", label: "Raichi · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/naruhaya.png", label: "Naruhaya · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum.png", label: "Team Y Player · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/isagi.png", label: "Isagi · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/niko.png", label: "Niko · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/kunigami.png", label: "Kunigami · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum_2.png", label: "Team Y Player 2 · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/random_bum_3.png", label: "Team Y Player 3 · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/bachira.png", label: "Bachira · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/gagamaru.png", label: "Gagamaru · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/isagis_first_goal/igarashi.png", label: "Igarashi · Blue Lock — Isagi's First Goal" },
+  { img: "scenes/death_note_youre_god/teru_mikami.png", label: "Teru Mikami · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/light_yagami.png", label: "Light Yagami · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/koshi.png", label: "Koshi · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/tv_announcer.png", label: "TV announcer · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/matsuda.png", label: "Matsuda · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/hideki_ide.png", label: "Hideki Ide · Death Note — You're God" },
+  { img: "scenes/death_note_youre_god/takada.png", label: "Takada · Death Note — You're God" },
+  { img: "scenes/chainsaw_man_funny_momments/makima.png", label: "Makima · Chainsaw Man — Funny Moments" },
+  { img: "scenes/chainsaw_man_funny_momments/denji.png", label: "Denji · Chainsaw Man — Funny Moments" },
+  { img: "scenes/chainsaw_man_funny_momments/aki.png", label: "Aki · Chainsaw Man — Funny Moments" },
+  { img: "scenes/chainsaw_man_funny_momments/power.png", label: "Power · Chainsaw Man — Funny Moments" },
+  { img: "scenes/chainsaw_man_funny_momments/hirokazu.png", label: "Hirokazu · Chainsaw Man — Funny Moments" },
+  { img: "scenes/chainsaw_man_funny_momments/himeno.png", label: "Himeno · Chainsaw Man — Funny Moments" },
+  { img: "scenes/cyberpunk_edgerunners_finale/david.png", label: "David · Cyberpunk: Edgerunners — Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/falco.png", label: "Falco · Cyberpunk: Edgerunners — Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/adam_smasher.png", label: "Adam Smasher · Cyberpunk: Edgerunners — Finale" },
+  { img: "scenes/cyberpunk_edgerunners_finale/lucy.png", label: "Lucy · Cyberpunk: Edgerunners — Finale" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/tanjiro.png", label: "Tanjiro · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/giyu.png", label: "Giyu · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akaza_and_hakuji.png", label: "Akaza and Hakuji · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 1/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/keizo_aka_dojo_mentor.png", label: "Keizo aka Dojo Mentor · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 2/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/akazas_dad.png", label: "Akazas Dad · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/muzan.png", label: "Muzan · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/koyuki_aka_akazas_wife.png", label: "Koyuki aka Akazas wife · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5" },
+  { img: "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44/crow.png", label: "Crow · Demon Slayer — Tanjiro & Giyu vs Akaza (ganzer Kampf) — Teil 5/5" },
+  { img: "scenes/akaza_entrance/akaza.png", label: "Akaza · Demon Slayer — Akaza Entrance" },
+  { img: "scenes/akaza_entrance/giyu.png", label: "Giyu · Demon Slayer — Akaza Entrance" },
+  { img: "scenes/akaza_entrance/tanjiro.png", label: "Tanjiro · Demon Slayer — Akaza Entrance" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
