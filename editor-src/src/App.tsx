@@ -1,3 +1,5 @@
+import { prefetchFFmpeg } from './utils/ffmpeg';
+import type { VideoQuality } from './utils/ssExport';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { UploadPanel } from './components/UploadPanel';
@@ -492,6 +494,7 @@ export default function App() {
         });
 
         setDuration(Number(fileDuration.toFixed(3)));
+        prefetchFFmpeg();   // Video-Engine schon mal laden — der Export startet dann ohne Wartezeit
       } catch {
         await new Promise<void>((resolve) => {
           const videoEl = document.createElement('video');
@@ -1275,7 +1278,30 @@ export default function App() {
   };
 
   // Export Modpack ZIP Archive
-  const handleExportZip = async () => {
+  // Export-Qualität: „Kompakt“ (720p, klein, empfohlen) oder „Original“ (volle Qualität, größer)
+  const [exportChoiceOpen, setExportChoiceOpen] = useState(false);
+  const [exportQuality, setExportQuality] = useState<VideoQuality>(() => {
+    try { return localStorage.getItem('ss-export-quality') === 'original' ? 'original' : 'compact'; } catch { return 'compact'; }
+  });
+  const pickExportQuality = (q: VideoQuality) => {
+    setExportQuality(q);
+    try { localStorage.setItem('ss-export-quality', q); } catch { /* egal */ }
+  };
+  const mb = (bytes: number) => `${(bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0)} MB`;
+  const originalVideoBytes = (videoMedia?.file as Blob | undefined)?.size || 0;
+  // Kompakt: 720p bei ~0,9 Mbit/s Bild + 96 kbit/s Ton (Erfahrungswert, je nach Bild etwas mehr/weniger)
+  // — bei Quellen mit wenig Datenrate höchstens ~60 % der Originalgröße.
+  const compactVideoBytes = Math.round(Math.min(((duration || 0) * (900_000 + 96_000)) / 8, originalVideoBytes ? originalVideoBytes * 0.6 : Infinity));
+  const sizeHint = (bytes: number) =>
+    bytes > 95 * 1048576 ? '⚠ Too big for the automatic scene import (max ~95 MB)'
+    : bytes > 25 * 1048576 ? '⚠ Over 25 MB: GitHub website upload won’t take it — send it another way'
+    : bytes > 19.5 * 1048576 ? 'Over 20 MB: loads a bit slower in the game (not via CDN)'
+    : 'Loads fast in the game';
+
+  const handleExportZip = () => setExportChoiceOpen(true);
+
+  const runExportZip = async (videoQuality: VideoQuality) => {
+    setExportChoiceOpen(false);
     setExportTitle('Packing Scene (.zip)');
     setIsExporting(true);
     setExportProgress({ status: 'Starting export...', percent: 0 });
@@ -1283,7 +1309,7 @@ export default function App() {
     exportAbortControllerRef.current = controller;
 
     try {
-      const { archive: zippedBlob, videoFailed, oversize, missingAudioLines } = await exportSynchronstudioZip(
+      const { archive: zippedBlob, videoFailed, oversize, missingAudioLines, videoBytes } = await exportSynchronstudioZip(
         packInfo,
         characters,
         clips,
@@ -1291,7 +1317,8 @@ export default function App() {
         backingTrackMedia,
         (progress) => setExportProgress(progress),
         controller.signal,
-        vocalsMedia
+        vocalsMedia,
+        videoQuality
       );
 
       // Trigger file download
@@ -1303,7 +1330,8 @@ export default function App() {
 
       const notes: string[] = [];
       if (videoFailed) notes.push('The video could not be encoded in the browser. The ZIP contains the source video and backing track in _source/ — merge them with ffmpeg before adding the scene to the game.');
-      if (oversize) notes.push('The scene video is larger than ~20 MB (CDN limit). See README.txt in the ZIP.');
+      if (videoBytes) notes.push(`Scene video: ${mb(videoBytes)} (${videoQuality === 'original' ? 'original quality' : 'compact'}). ZIP: ${mb(zippedBlob.size)}.`);
+      if (oversize) notes.push('The scene video is larger than ~20 MB (CDN limit) — it loads a bit slower in the game. Choose “Compact” for a smaller file.');
       if (missingAudioLines) notes.push(`${missingAudioLines} line(s) have no original audio (no video audio could be decoded for them).`);
       if (notes.length) {
         showAlert(
@@ -1777,6 +1805,35 @@ export default function App() {
       )}
 
       {/* Custom Message Modal */}
+      {exportChoiceOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setExportChoiceOpen(false)}>
+          <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 max-w-md w-full space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wide">Export scene — video quality</h3>
+            {([
+              ['compact', 'Compact (recommended)', '720p, smaller file — loads fast for all players', compactVideoBytes ? (originalVideoBytes ? Math.min(compactVideoBytes, originalVideoBytes) : compactVideoBytes) : 0],
+              ['original', 'Original quality', 'Picture kept as it is (H.264 copied 1:1, otherwise high-quality re-encode) — bigger file, often faster export', originalVideoBytes],
+            ] as [VideoQuality, string, string, number][]).map(([q, label, desc, bytes]) => (
+              <label key={q} className={`block rounded-lg border p-3 cursor-pointer ${exportQuality === q ? 'border-amber-500/60 bg-amber-500/10' : 'border-zinc-800 hover:border-zinc-700'}`}>
+                <div className="flex items-center gap-2">
+                  <input type="radio" name="export-quality" checked={exportQuality === q} onChange={() => pickExportQuality(q)} />
+                  <span className="text-sm font-bold text-zinc-100">{label}</span>
+                  <span className="ml-auto text-xs font-bold text-amber-300">{bytes ? `≈ ${mb(bytes)}` : '—'}</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1">{desc}</p>
+                {bytes > 0 && <p className="text-[11px] text-zinc-500 mt-0.5">{sizeHint(bytes)}</p>}
+              </label>
+            ))}
+            {originalVideoBytes > 0 && compactVideoBytes > 0 && (
+              <p className="text-[11px] text-zinc-400">Difference: about {mb(Math.abs(originalVideoBytes - Math.min(compactVideoBytes, originalVideoBytes)))}.</p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <button className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-xs" onClick={() => setExportChoiceOpen(false)}>Cancel</button>
+              <button className="px-3 py-1.5 rounded-lg bg-amber-500 text-black font-bold text-xs" onClick={() => runExportZip(exportQuality)}>Export</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {customModal.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">

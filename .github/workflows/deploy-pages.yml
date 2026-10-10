@@ -60,6 +60,17 @@ jobs:
             ./ _site/
           # Große Szenen-Videos raus — Client lädt sie von jsDelivr
           find _site/scenes -type f -name '*.mp4' -print -delete
+          # Skripte verkleinern: client.js lädt ~30 % schneller (gzip 225 → 160 KB). Im Repo bleibt
+          # der lesbare Code; globale Namen bleiben erhalten (kein Modul). Klappt es nicht, bleibt das Original.
+          for f in client.js i18n.js reliability.js; do
+            if npx --yes esbuild@0.24.0 "_site/$f" --minify --target=es2020 --sourcemap --outfile="_site/$f.min" --log-level=warning; then
+              mv "_site/$f.min" "_site/$f"; mv "_site/$f.min.map" "_site/$f.map" 2>/dev/null || true
+              sed -i "s#sourceMappingURL=$f.min.map#sourceMappingURL=$f.map#" "_site/$f"
+              node --check "_site/$f"
+            else
+              echo "::warning::$f konnte nicht verkleinert werden — Original bleibt"
+            fi
+          done
           # Größe checken
           echo "Artifact size:"
           du -sh _site

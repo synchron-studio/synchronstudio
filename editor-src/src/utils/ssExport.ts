@@ -102,6 +102,21 @@ async function runFfmpeg(ffmpeg: FFmpeg, args: string[], abortSignal?: AbortSign
 // Nur verkleinern, nie vergrößern; Breite und Höhe gerade (libx264 verlangt das).
 const SCALE_720P = "scale='trunc(min(1280,iw)/2)*2':-2";
 
+export type VideoQuality = 'compact' | 'original';
+
+/** Welcher Video-Codec steckt in der Datei? (aus der FFmpeg-Ausgabe von `-i`) */
+async function probeVideoCodec(ffmpeg: FFmpeg, inName: string): Promise<string> {
+  let codec = '';
+  const onLog = ({ message }: { message: string }) => {
+    const m = /Video:\s*([a-z0-9_]+)/i.exec(message);
+    if (m && !codec) codec = m[1].toLowerCase();
+  };
+  ffmpeg.on('log', onLog);
+  try { await ffmpeg.exec(['-hide_banner', '-i', inName]); } catch { /* ohne Ausgabe-Datei endet ffmpeg immer mit Fehler */ }
+  finally { try { ffmpeg.off('log', onLog); } catch { /* egal */ } }
+  return codec;
+}
+
 async function muxVideoWithBacking(
   ffmpeg: FFmpeg,
   videoBlob: Blob,
@@ -110,7 +125,8 @@ async function muxVideoWithBacking(
   backingName: string,
   onProgress: (p: number, msg: string) => void,
   abortSignal?: AbortSignal,
-  muteWindows: [number, number][] = []
+  muteWindows: [number, number][] = [],
+  quality: VideoQuality = 'compact'
 ): Promise<Blob> {
   const inName = `in.${videoExt(videoBlob, videoName)}`;
   const aName = backingBlob ? `backing.${audioExt(backingBlob, backingName)}` : '';
@@ -137,6 +153,15 @@ async function muxVideoWithBacking(
           ['-map', '0:v:0', '-an'],
         ];
     const attempts: string[][] = [];
+    // „Original-Qualität“: Bild unverändert übernehmen (H.264 — schnell, keine Verluste), sonst
+    // hochwertig neu kodieren in Originalgröße. Klappt das nicht, geht es mit „Kompakt“ weiter.
+    if (quality === 'original') {
+      const codec = await probeVideoCodec(ffmpeg, inName);
+      for (const audioArgs of audioVariants) {
+        if (codec === 'h264') attempts.push(['-i', inName, ...audioArgs, '-c:v', 'copy', '-movflags', '+faststart', 'out.mp4']);
+        attempts.push(['-i', inName, ...audioArgs, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'out.mp4']);
+      }
+    }
     for (const audioArgs of audioVariants) {
       attempts.push(
         ['-i', inName, ...audioArgs, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-vf', SCALE_720P, '-movflags', '+faststart', 'out.mp4'],
@@ -215,6 +240,7 @@ export interface SynchronstudioExportResult {
   videoFailed: boolean;
   oversize: boolean;
   missingAudioLines: number;
+  videoBytes?: number;
 }
 
 export async function exportSynchronstudioZip(
@@ -225,7 +251,8 @@ export async function exportSynchronstudioZip(
   backingTrackMedia?: MediaSource,
   onProgress?: (progress: ZipExportProgress) => void,
   abortSignal?: AbortSignal,
-  vocalsMedia?: MediaSource
+  vocalsMedia?: MediaSource,
+  videoQuality: VideoQuality = 'compact'
 ): Promise<SynchronstudioExportResult> {
   const check = () => {
     if (abortSignal?.aborted) throw new ExportCancelled();
@@ -327,7 +354,8 @@ export async function exportSynchronstudioZip(
         ffmpeg, videoBlob, videoMedia?.name || '', backingBlob, backingTrackMedia?.name || '',
         (p, msg) => upd(msg, 48 + (p / 100) * 37),
         abortSignal,
-        lines.map((l) => [Math.max(0, (l.t as number) - 0.06), (l.end as number) + 0.06] as [number, number])
+        lines.map((l) => [Math.max(0, (l.t as number) - 0.06), (l.end as number) + 0.06] as [number, number]),
+        videoQuality
       );
     } catch (e) {
       if (e instanceof ExportCancelled) throw e;
@@ -442,7 +470,7 @@ export async function exportSynchronstudioZip(
       }
     );
     upd('Done!', 100);
-    return { archive, videoFailed, oversize, missingAudioLines };
+    return { archive, videoFailed, oversize, missingAudioLines, videoBytes: sceneMp4?.size };
   } catch (e: any) {
     if (e instanceof ExportCancelled) throw e;
     console.error('JSZip generateAsync failed', e);

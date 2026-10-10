@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.7";
+const APP_VERSION = "9.26.8";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -204,14 +204,16 @@ function makePeerConfig(forceRelay, brokerIdx) {
     path: b.path,
     secure: !!b.secure,
     config: {
+      // Weniger ist schneller: Jeder STUN/TURN-Server kostet beim Verbindungsaufbau Zeit (der
+      // Browser warnt ab 5 Servern ausdrücklich). Vorher 10 Server × Vorrat 8 = viele unnötige
+      // TURN-Anmeldungen bei jedem Raum. Jetzt je ein Weg pro Fall: STUN (direkt), ExpressTurn
+      // UDP/TCP, Open Relay über TLS-Port 443 für strenge Firewalls.
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        ...MY_TURN,
-        ...openRelayTurn
+        ...MY_TURN.filter(s => String(s.urls).startsWith("turn:")),
+        ...openRelayTurn.filter(s => String(s.urls).startsWith("turns:")).slice(0, 1)
       ],
-      iceCandidatePoolSize: 8,
+      iceCandidatePoolSize: 2,
       ...(forceRelay ? { iceTransportPolicy: "relay" } : {})
     }
   };
@@ -837,6 +839,19 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.26.8", items: [
+    "⚡ Seite lädt schneller: Spiel-Code ~30 % kleiner, Schriften blockieren den Aufbau nicht mehr, Verbindungsmodul kommt direkt von unserer Seite (kein fremder Server mehr nötig)",
+    "⚡ Raum erstellen/beitreten schneller: weniger unnötige Verbindungs-Server beim Aufbau",
+    "📥 Bricht ein Video-Download ab (WLAN-Wackler), geht er an der Stelle weiter statt wieder bei 0 %",
+    "🛠 Editor: Beim Export „Kompakt“ (720p, klein) oder „Original-Qualität“ wählen — mit MB-Angabe und Hinweis, wie schnell es im Spiel lädt",
+    "🛠 Editor: Video-Engine lädt schon im Hintergrund vor — der Export startet sofort, mit Prozentanzeige"
+  ], itemsEn: [
+    "⚡ Page loads faster: game code ~30% smaller, fonts no longer block rendering, connection module served from our own site (no third-party server needed)",
+    "⚡ Creating/joining rooms is faster: fewer unnecessary connection servers during setup",
+    "📥 If a video download breaks off (Wi-Fi hiccup), it continues where it stopped instead of starting at 0%",
+    "🛠 Editor: choose “Compact” (720p, small) or “Original quality” when exporting — with MB sizes and a hint how fast it loads in the game",
+    "🛠 Editor: the video engine preloads in the background — export starts right away, with a percentage"
+  ]},
   { v: "9.26.7", items: [
     "🔊 Premiere: Lädt das Video kurz nach, warten die Stimmen jetzt mit — vorher lief der Rest der Szene versetzt",
     "🔊 Premiere: Schutz gegen Übersteuern (Kratzen) bei lauten Stellen, vielen Stimmen oder Gesamt-Lautstärke über 100 %",
@@ -3291,6 +3306,13 @@ function withPeerLib(run, tries = 0) {
   if (tries === 0) {
     clearTimeout(peerLibWait);
     status("start-status", tt("⏳ Loading connection module …", "⏳ Lade Verbindungsmodul …"));
+  }
+  // Eigene Kopie kam nicht (z. B. Werbeblocker/Cache-Problem) → einmal den öffentlichen Server probieren
+  if (tries === 20 && !document.getElementById("peerjs-fallback")) {
+    const sc = document.createElement("script");
+    sc.id = "peerjs-fallback";
+    sc.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+    document.head.appendChild(sc);
   }
   if (tries >= 80) {
     peerLibWait = null;

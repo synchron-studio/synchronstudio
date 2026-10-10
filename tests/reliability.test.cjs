@@ -63,3 +63,20 @@ test('HTTP failures and empty downloads are rejected', async t => {
   mock.mock.mockImplementation(async()=>new Response(''));
   await assert.rejects(downloadBlob('test'), /Empty/);
 });
+test('a broken download resumes where it stopped (Range) instead of starting over', async t => {
+  const data = new Uint8Array([1,2,3,4,5,6,7,8]);
+  const ranges = [];
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const r = opts.headers && opts.headers.Range;
+    ranges.push(r || '');
+    if (!r) {
+      // erster Versuch: nach 3 Bytes reißt die Leitung ab
+      return new Response(new ReadableStream({ start(c) { c.enqueue(data.slice(0, 3)); setTimeout(() => c.error(new TypeError('network')), 5); } }), { headers: { 'content-length': '8' } });
+    }
+    const from = Number(/bytes=(\d+)-/.exec(r)[1]);
+    return new Response(data.slice(from), { status: 206, headers: { 'content-range': `bytes ${from}-7/8`, 'content-length': String(8 - from) } });
+  });
+  const blob = await downloadBlob('test', { stallMs: 200 });
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), data);
+  assert.deepEqual(ranges, ['', 'bytes=3-']);
+});
