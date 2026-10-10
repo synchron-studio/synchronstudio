@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.27.3";
+const APP_VERSION = "9.27.4";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -848,6 +848,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.27.4", items: [
+    "🎬 Neue Szene: Nobara Ruins Gojo's Shirt"
+  ], itemsEn: [
+    "🎬 New scene: Nobara Ruins Gojo's Shirt"
+  ]},
   { v: "9.27.3", items: [
     "🎙 Hashira Training: exakt Elias' Drive-Fassung (deutsche Texte & Timings unverändert) — nur die Original-Zeilen kommen jetzt aus seiner deutschen Sprachspur, dazu englische Übersetzungen",
     "🔄 Ausgetauschte Szenen laden jetzt garantiert neu (keine alten Dateien mehr aus dem Browser-Speicher)",
@@ -2318,6 +2323,10 @@ const AVATAR_CHARS = [
   { img: "scenes/akaza_entrance/akaza.png", label: "Akaza · Demon Slayer — Akaza Entrance" },
   { img: "scenes/akaza_entrance/giyu.png", label: "Giyu · Demon Slayer — Akaza Entrance" },
   { img: "scenes/akaza_entrance/tanjiro.png", label: "Tanjiro · Demon Slayer — Akaza Entrance" },
+  { img: "scenes/nobara_ruins_gojo_s_shirt/nobara_kugisaki.png", label: "Nobara Kugisaki · Nobara Ruins Gojo's Shirt" },
+  { img: "scenes/nobara_ruins_gojo_s_shirt/yuji_itadori.png", label: "Yuji Itadori · Nobara Ruins Gojo's Shirt" },
+  { img: "scenes/nobara_ruins_gojo_s_shirt/megumi_fushiguro.png", label: "Megumi Fushiguro · Nobara Ruins Gojo's Shirt" },
+  { img: "scenes/nobara_ruins_gojo_s_shirt/satoru_gojo.png", label: "Satoru Gojo · Nobara Ruins Gojo's Shirt" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
