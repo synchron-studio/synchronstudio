@@ -732,12 +732,9 @@ function expandRequests(lines, failed, summary) {
       // Notfalls die Webseite selbst nach Mod-Links durchsuchen
       try { const t = curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8'); seen.push(t); walk(t); } catch (e) { /* egal */ }
     }
-    if (!ids.size && process.env.GITHUB_STEP_SUMMARY) {
-      // Zur Fehlersuche: was GameBanana zu der Anfrage geliefert hat (inkl. aller Links darin)
-      const links = [...new Set(seen.join('\n').match(/https?:\/\/[^\s"'<>\\]+/g) || [])].filter(u => !/\.(?:png|jpe?g|webp|gif|svg|css|js|woff2?)(?:\?|$)/i.test(u));
-      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n<details><summary>Anfrage ${rm[1]} – Rohdaten</summary>\n\n\`\`\`\n${seen.map(x => x.slice(0, 3000)).join('\n----\n').replace(/\`/g, "'")}\n\`\`\`\n\nLinks: ${links.slice(0, 80).join(' ')}\n</details>\n`);
-    }
-    if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden.` }); continue; }
+    // Zur Fehlersuche: alle Links, die GameBanana zu der Anfrage geliefert hat
+    const links = [...new Set(seen.join('\n').match(/https?:\/\/[^\s"'<>\\]+/g) || [])].filter(u => !/\.(?:png|jpe?g|webp|gif|svg|css|js|woff2?)(?:\?|$)/i.test(u));
+    if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden.\n\nGefundene Links:\n${links.slice(0, 120).join('\n')}\n\nAntworten:\n${seen.map(x => x.slice(0, 2500)).join('\n----\n')}` }); continue; }
     summary.push(`- GameBanana-Anfrage ${rm[1]} „${name || '?'}“ → Mod ${[...ids].join(', ')}`);
     for (const id of ids) out.push(`https://gamebanana.com/mods/${id}` + (asM ? ` als ${asM[1]}` : ''));
   }
