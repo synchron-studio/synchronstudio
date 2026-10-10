@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.27.2";
+const APP_VERSION = "9.27.3";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -122,8 +122,16 @@ document.addEventListener("error", ev => {
   try { el.replaceWith(span); } catch { try { el.style.visibility = "hidden"; } catch {} }
 }, true);
 
+// Versionsnummer der Szenen-Dateien (setzt der Import bei jedem Einbauen/Ersetzen neu). Hängt als
+// ?v=… an Video und Original-Zeilen: Browser und CDN behielten sonst nach dem Ersetzen einer Szene
+// die alten Dateien unter gleicher Adresse (z. B. noch die englischen Zeilen statt der deutschen).
+function withSceneVersion(url, sc) {
+  const ver = sc && (sc.assetsVersion || sc.catalogChangedAt);
+  if (!url || !ver || /^(blob:|data:)/i.test(url)) return url;
+  return url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(ver);
+}
 function sceneVideoSrc() {
-  return videoBlobUrl || assetUrl(scene && scene.videoUrl);
+  return videoBlobUrl || withSceneVersion(assetUrl(scene && scene.videoUrl), scene);
 }
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  VERMITTLUNG (PeerJS) + TURN-RELAY                                 ║
@@ -840,6 +848,10 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.27.3", items: [
+    "🎙 Hashira Training: exakt Elias' Drive-Fassung (deutsche Texte & Timings unverändert) — nur die Original-Zeilen kommen jetzt aus seiner deutschen Sprachspur, dazu englische Übersetzungen",
+    "🔄 Ausgetauschte Szenen laden jetzt garantiert neu (keine alten Dateien mehr aus dem Browser-Speicher)",
+  ] },
   { v: "9.27.2", items: [
     "🎙 Hashira Training jetzt mit deutschen Stimmen (neue Fassung von Elias, Full HD) — Original-Zeilen neu aus der Sprachspur geschnitten, englische Untertitel passend zur deutschen Fassung",
     "🔧 Zeilen, die sich zeitlich überschnitten, enthielten das Ende einer anderen Stimme — behoben",
@@ -8708,7 +8720,7 @@ function sliceBuffer(full, t, end) {
 async function getLineOrigBuffer(l) {
   if (l.orig) {
     const ctx = getCtx();
-    const url = assetUrl(l.orig);
+    const url = withSceneVersion(assetUrl(l.orig), scene);
     if (origCache.has(url)) return origCache.get(url);
     if (origLoading.has(url)) return origLoading.get(url);
     const signal = sceneAudioController.signal;

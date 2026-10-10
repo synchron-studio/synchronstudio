@@ -281,6 +281,8 @@ function checkIdFree(scene) {
   if (old && !old.imported) throw new ImportError(`Es gibt schon eine (von Hand eingebaute) Szene mit der ID „${scene.id}“ — die wird nicht überschrieben. Bitte im Editor eine andere Szenen-ID / einen anderen Titel vergeben.`);
 }
 function upsertScene(scene) {
+  // Neue Versionsnummer für alle Dateien der Szene → Browser/CDN laden nach dem Ersetzen garantiert neu
+  scene.assetsVersion = Date.now().toString(36);
   const file = path.join(ROOT, 'scenes.json');
   let text = fs.readFileSync(file, 'utf8');
   const list = JSON.parse(text);
