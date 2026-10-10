@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.28.2";
+const APP_VERSION = "9.29.0";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,13 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.0", items: [
+    "🎬 Outtakes: jetzt bleiben alle Versprecher drin — vorher nur die letzten 8 pro Spieler und höchstens 24 insgesamt (mehrfach neu aufgenommene Lines fehlten oft komplett)",
+    "🪄 Editor: automatische Zeilenerkennung — Vocals (oder Video) hochladen, die Lines werden selbst angelegt; nur noch Text & Figur eintragen. Unter „Vocals Only“ an/aus",
+  ], itemsEn: [
+    "🎬 Outtakes: all bloopers are kept now — before only the last 8 per player and 24 in total (re-recorded lines were often missing completely)",
+    "🪄 Editor: automatic line detection — upload vocals (or video) and the lines are created for you; just add text & character. Toggle under “Vocals Only”",
+  ] },
   { v: "9.28.2", items: [
     "🎬 Neue Szene: Upper Moon Meeting",
     "🎬 Neue Szene: Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2",
