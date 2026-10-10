@@ -1444,6 +1444,90 @@
     #podium-1 .p-avatar-wrap,#podium-1 .p-avatar-wrap .pavatar{width:64px;height:64px;font-size:1.5rem}
   }
 
+  /* ═══ Finale-Podest — Kino-Upgrade (v9.27) ═══ */
+  .podium-stage{padding-top:34px;min-height:430px;isolation:isolate;
+    background:
+      radial-gradient(ellipse 60% 35% at 50% 100%, rgba(240,168,48,.18), transparent 70%),
+      radial-gradient(ellipse 120% 60% at 50% 120%, rgba(120,60,200,.10), transparent 70%),
+      linear-gradient(180deg,#0c0c12 0%,#07070a 100%)}
+  #podium-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+  .podium-beams{position:absolute;inset:-10% 0 0;pointer-events:none;z-index:0;opacity:0;transition:opacity 1.2s ease}
+  .podium-stage.lit .podium-beams{opacity:1}
+  .podium-beams .beam{position:absolute;top:-6%;left:50%;width:46%;height:120%;transform-origin:50% 0;
+    background:conic-gradient(from 180deg at 50% 0, transparent 0deg 168deg, rgba(255,226,160,.22) 175deg, rgba(255,240,200,.4) 180deg, rgba(255,226,160,.22) 185deg, transparent 192deg 360deg);
+    filter:blur(6px);mix-blend-mode:screen;animation:beamSway 7s ease-in-out infinite}
+  .podium-beams .beam:nth-child(1){margin-left:-38%;animation-delay:-1s;animation-duration:8s}
+  .podium-beams .beam:nth-child(2){margin-left:-8%;animation-delay:-3s;background:conic-gradient(from 180deg at 50% 0, transparent 0deg 168deg, rgba(190,140,255,.18) 175deg, rgba(220,190,255,.3) 180deg, rgba(190,140,255,.18) 185deg, transparent 192deg 360deg)}
+  .podium-beams .beam:nth-child(3){margin-left:-23%;animation-delay:-5s;animation-duration:9s}
+  .podium-beams .beam:nth-child(4){margin-left:-38%;left:84%;animation-delay:-2s;background:conic-gradient(from 180deg at 50% 0, transparent 0deg 168deg, rgba(120,220,255,.15) 175deg, rgba(170,235,255,.27) 180deg, rgba(120,220,255,.15) 185deg, transparent 192deg 360deg)}
+  .podium-stage.alive .podium-beams .beam{animation-duration:3.2s}
+  @keyframes beamSway{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}}
+  .podium-haze{position:absolute;left:-10%;right:-10%;bottom:0;height:45%;pointer-events:none;z-index:1;
+    background:radial-gradient(ellipse 60% 70% at 30% 100%, rgba(200,200,255,.07), transparent 70%),radial-gradient(ellipse 60% 70% at 75% 100%, rgba(255,210,150,.07), transparent 70%);
+    filter:blur(10px);animation:hazeDrift 14s ease-in-out infinite alternate}
+  @keyframes hazeDrift{from{transform:translateX(-4%)}to{transform:translateX(4%)}}
+  .podium-gloss{position:absolute;left:0;right:0;bottom:0;height:64px;z-index:1;pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 40%),repeating-linear-gradient(90deg,rgba(255,255,255,.025) 0 1px,transparent 1px 48px);
+    -webkit-mask-image:linear-gradient(180deg,#000,transparent);mask-image:linear-gradient(180deg,#000,transparent);
+    transform:perspective(300px) rotateX(55deg);transform-origin:bottom}
+  .podium-flash{position:absolute;inset:0;z-index:5;pointer-events:none;background:radial-gradient(circle at 50% 40%,rgba(255,250,230,.95),rgba(255,220,140,.4) 35%,transparent 70%);opacity:0}
+  .podium-flash.go{animation:podiumFlash .9s ease-out}
+  @keyframes podiumFlash{0%{opacity:0}8%{opacity:1}100%{opacity:0}}
+  .podium-stage.shake{animation:stageShake .45s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes stageShake{10%,90%{transform:translate(-1px,0)}20%,80%{transform:translate(3px,1px)}30%,50%,70%{transform:translate(-5px,-1px)}40%,60%{transform:translate(5px,1px)}}
+
+  /* Säulen fahren hoch, Glanz läuft drüber, Spiegelung im Boden */
+  .podium-slot .podium-pillar{transform:scaleY(0);transform-origin:50% 100%;overflow:visible;
+    -webkit-box-reflect:below 1px linear-gradient(transparent 55%,rgba(255,255,255,.14))}
+  .podium-slot.show .podium-pillar{animation:pillarRise .85s cubic-bezier(.2,1.35,.35,1) forwards}
+  @keyframes pillarRise{0%{transform:scaleY(0)}100%{transform:scaleY(1)}}
+  .podium-slot .podium-pillar .pillar-shine{position:absolute;inset:0;overflow:hidden;border-radius:3px 3px 0 0;pointer-events:none}
+  .podium-slot .podium-pillar .pillar-shine::after{content:"";position:absolute;top:-20%;bottom:-20%;width:38%;left:-60%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.28),transparent);transform:skewX(-18deg);animation:pillarShine 3.6s ease-in-out 1.2s infinite}
+  #podium-2 .pillar-shine::after{animation-delay:1.9s} #podium-3 .pillar-shine::after{animation-delay:2.6s}
+  @keyframes pillarShine{0%{left:-60%}45%,100%{left:130%}}
+  .podium-slot .p-avatar-wrap,.podium-slot .p-name,.podium-slot .p-score{opacity:0;transform:translateY(-14px);transition:opacity .45s ease .55s,transform .6s cubic-bezier(.2,1.4,.35,1) .55s}
+  .podium-slot.show .p-avatar-wrap,.podium-slot.show .p-name,.podium-slot.show .p-score{opacity:1;transform:none}
+  .p-avatar-wrap .p-medal{position:absolute;right:-10px;bottom:-8px;z-index:4;font-size:1.35rem;line-height:1;filter:drop-shadow(0 2px 5px rgba(0,0,0,.7))}
+  #podium-1.show .podium-pillar{animation:pillarRise .85s cubic-bezier(.2,1.35,.35,1) forwards,goldShimmer 2.8s ease-in-out .9s infinite}
+  .podium-stage .podium-wrap{margin-top:46px}
+  .podium-slot .p-score{font-size:1.15rem;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  #podium-1 .p-score{font-size:1.45rem;color:#ffd77a;text-shadow:0 0 14px rgba(255,190,80,.7)}
+
+  /* Leuchtringe */
+  .podium-slot .p-avatar-wrap::before{content:"";position:absolute;inset:-7px;border-radius:50%;z-index:-1;opacity:.9;
+    background:conic-gradient(from 0deg,var(--ring1,#888),var(--ring2,#444),var(--ring1,#888),var(--ring2,#444),var(--ring1,#888));
+    filter:blur(1px);animation:ringSpin 6s linear infinite}
+  #podium-1{--ring1:#ffe08a;--ring2:#b8811c} #podium-2{--ring1:#f2f2fa;--ring2:#7d7d8c} #podium-3{--ring1:#f0a868;--ring2:#7a4520}
+  #podium-1 .p-avatar-wrap::before{inset:-9px;animation-duration:3s;box-shadow:0 0 40px rgba(255,200,90,.55)}
+  @keyframes ringSpin{to{transform:rotate(360deg)}}
+
+  /* Krone */
+  .podium-crown{position:absolute;left:50%;top:-34px;font-size:2.3rem;line-height:1;transform:translate(-50%,-260px) rotate(-25deg);opacity:0;z-index:3;
+    filter:drop-shadow(0 0 12px rgba(255,210,100,.95)) drop-shadow(0 4px 6px rgba(0,0,0,.6));pointer-events:none}
+  .podium-crown.drop{animation:crownDrop 1.1s cubic-bezier(.3,1.5,.5,1) forwards}
+  @keyframes crownDrop{0%{opacity:0;transform:translate(-50%,-260px) rotate(-25deg)}35%{opacity:1}70%{transform:translate(-50%,6px) rotate(6deg)}100%{opacity:1;transform:translate(-50%,0) rotate(-6deg)}}
+
+  /* Sieger-Name in Gold mit Glanz + Banner */
+  #podium-1 .p-name{font-family:var(--font-display);font-size:1.25rem;letter-spacing:.03em;
+    background:linear-gradient(100deg,#b07a18 0%,#ffe9a8 30%,#fff6d8 40%,#e2a83a 55%,#ffd56e 75%,#b07a18 100%);background-size:250% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;animation:goldText 3s linear infinite;max-width:150px}
+  @keyframes goldText{from{background-position:100% 0}to{background-position:-150% 0}}
+  .podium-champ{display:inline-block;left:50%;transform:translate(-50%,8px) scale(.9);padding:8px 26px;border-radius:6px;font-size:1.25rem;
+    background:linear-gradient(180deg,rgba(255,215,120,.16),rgba(255,180,60,.06));border:1px solid rgba(255,210,120,.45);
+    box-shadow:0 0 30px rgba(255,190,80,.25),inset 0 1px 0 rgba(255,240,200,.25);white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
+  .podium-champ.show{transform:translate(-50%,0) scale(1)}
+  .podium-champ::after{content:"";position:absolute;top:0;bottom:0;width:30%;left:-40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-20deg);animation:pillarShine 2.8s ease-in-out .6s infinite}
+
+  @media(max-width:600px){.podium-stage{min-height:380px}.podium-champ{font-size:.98rem;padding:6px 14px;white-space:normal;line-height:1.25;width:92%}#podium-1 .p-name{font-size:1.05rem}.podium-crown{font-size:1.9rem;top:-28px}}
+  @media(max-width:430px){.podium-stage{min-height:340px;padding-top:28px}.podium-slot .p-score{font-size:.95rem}#podium-1 .p-score{font-size:1.15rem}.podium-slot .p-avatar-wrap::before{inset:-5px}}
+  @media (prefers-reduced-motion:reduce){
+    .podium-beams .beam,.podium-haze,.pillar-shine::after,.podium-slot .p-avatar-wrap::before,#podium-1 .p-name,.podium-champ::after{animation:none!important}
+    .podium-slot .podium-pillar{transform:none}.podium-slot.show .podium-pillar{animation:none}
+    .podium-crown.drop{animation:none;opacity:1;transform:translate(-50%,0)}
+    .podium-stage.shake,.podium-flash.go{animation:none}
+  }
+
   .finalrow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
     background:#14141b;border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-size:.9rem}
   .finalrow .fname{color:var(--text)}
@@ -2280,10 +2364,10 @@
       <button class="primary" id="btn-ach-close" data-i18n="ach.close">Close</button>
     </div>
   </div>
-  <script src="i18n.js?v=9.26.8"></script>
-  <script src="fix-webm-duration.js?v=9.26.8"></script>
-  <script src="reliability.js?v=9.26.8"></script>
-  <script src="client.js?v=9.26.8"></script>
+  <script src="i18n.js?v=9.27.0"></script>
+  <script src="fix-webm-duration.js?v=9.27.0"></script>
+  <script src="reliability.js?v=9.27.0"></script>
+  <script src="client.js?v=9.27.0"></script>
   <!-- Besucherzähler (GoatCounter) — Stats: https://synchronstudio.goatcounter.com -->
   <script data-goatcounter="https://synchronstudio.goatcounter.com/count"
           async src="https://gc.zgo.at/count.js"></script>

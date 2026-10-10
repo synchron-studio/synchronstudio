@@ -74,8 +74,8 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         <img
-          src="https://i.ibb.co/b59hT0xb/mmlogo.png"
-          alt="Mod Maker Logo"
+          src="./logo.svg"
+          alt="Synchronstudio"
           draggable={false}
           className="h-8 object-contain cursor-pointer shrink-0"
           onClick={onGoHome}

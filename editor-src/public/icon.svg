@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d1d26"/><stop offset="1" stop-color="#0c0c11"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe29a"/><stop offset=".55" stop-color="#f0a830"/><stop offset="1" stop-color="#b8741a"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)" stroke="#f0a830" stroke-opacity=".55" stroke-width="3"/>
+  <!-- Filmklappe oben -->
+  <g transform="translate(22 18) rotate(-8)">
+    <rect width="84" height="16" rx="3" fill="#24242e" stroke="#f0a830" stroke-width="2"/>
+    <path d="M10 0 L20 16 M30 0 L40 16 M50 0 L60 16 M70 0 L80 16" stroke="#f0a830" stroke-width="6"/>
+  </g>
+  <!-- Mikrofon -->
+  <rect x="50" y="42" width="28" height="44" rx="14" fill="url(#gold)"/>
+  <path d="M55 52h18M55 60h18M55 68h18" stroke="#7a4d10" stroke-width="2.5" stroke-linecap="round" opacity=".55"/>
+  <path d="M40 66c0 14 10.7 24 24 24s24-10 24-24" fill="none" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M64 90v14M50 106h28" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
+  <!-- Schallwellen -->
+  <path d="M28 56c-5 8-5 18 0 26M100 56c5 8 5 18 0 26" fill="none" stroke="#f0a830" stroke-width="4" stroke-linecap="round" opacity=".75"/>
+  <path d="M18 50c-8 12-8 26 0 38M110 50c8 12 8 26 0 38" fill="none" stroke="#f0a830" stroke-width="3.5" stroke-linecap="round" opacity=".4"/>
+</svg>

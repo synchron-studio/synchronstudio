@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.26.8";
+const APP_VERSION = "9.27.0";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -839,6 +839,15 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.27.0", items: [
+    "🏆 Finale komplett neu inszeniert: Lichtkegel & Dunst, Säulen fahren hoch, Punkte zählen hoch, Medaillen & Leuchtringe, Krone fällt auf den Sieger, Blitz, Konfetti-Kanonen mit echter Physik und Feuerwerk",
+    "🎵 Premiere: Die Musik (Backing-Track) wird automatisch leiser, solange jemand spricht — und danach weich wieder lauter. Auch im gespeicherten Ton",
+    "🛠 Editor: eigenes Synchronstudio-Logo statt der alten Fremd-Bilder (laden jetzt auch ohne fremden Bild-Server)"
+  ], itemsEn: [
+    "🏆 Finale completely restaged: light beams & haze, rising pillars, counting scores, medals & glow rings, a crown drops on the winner, flash, physics confetti cannons and fireworks",
+    "🎵 Premiere: the music (backing track) automatically gets quieter while someone speaks — and smoothly comes back afterwards. In the saved audio too",
+    "🛠 Editor: own Synchronstudio logo instead of the old third-party images (no external image server needed)"
+  ]},
   { v: "9.26.8", items: [
     "⚡ Seite lädt schneller: Spiel-Code ~30 % kleiner, Schriften blockieren den Aufbau nicht mehr, Verbindungsmodul kommt direkt von unserer Seite (kein fremder Server mehr nötig)",
     "⚡ Raum erstellen/beitreten schneller: weniger unnötige Verbindungs-Server beim Aufbau",
@@ -10288,6 +10297,131 @@ function startNewRound() {
 }
 
 // ═══ ANIMIERTES FINALE — Awards-Show mit Riser, Scheinwerfer, Applaus ═══
+// ═════════════════════════════════════════════════════════════
+// FINALE-EFFEKTE: Konfetti mit Physik, Feuerwerk, Funkelstaub (Canvas)
+// ═════════════════════════════════════════════════════════════
+const PodiumFx = (() => {
+  let canvas = null, g = null, raf = 0, parts = [], rockets = [], w = 0, h = 0, dpr = 1, last = 0, dustOn = false;
+  const reduced = () => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+  const GOLD = ["#ffd56e", "#ffe9a8", "#f0a830", "#fff6d8"];
+  const PARTY = ["#ffd56e", "#ff4d6d", "#b77bff", "#4de0ff", "#5fe3a1", "#ffffff", "#f0a830"];
+  function resize() {
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = r.width; h = r.height;
+    canvas.width = Math.max(1, Math.round(w * dpr)); canvas.height = Math.max(1, Math.round(h * dpr));
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function attach(el) {
+    canvas = el; g = canvas.getContext("2d"); resize();
+    if (!attach.bound) { attach.bound = true; window.addEventListener("resize", resize); }
+  }
+  function alive() { return canvas && document.querySelector("#scr-final.active") && !reduced(); }
+  function loop(ts) {
+    raf = 0;
+    if (!alive()) { parts = []; rockets = []; if (g) g.clearRect(0, 0, w, h); return; }
+    const dt = Math.min(2.5, last ? (ts - last) / 16.67 : 1); last = ts;
+    g.clearRect(0, 0, w, h);
+    // Funkelstaub in den Lichtkegeln
+    if (dustOn && parts.length < 520 && Math.random() < 0.35 * dt) {
+      parts.push({ k: "dust", x: Math.random() * w, y: h * (0.45 + Math.random() * 0.55), vx: (Math.random() - .5) * .15, vy: -.15 - Math.random() * .25, s: .6 + Math.random() * 1.6, life: 1, decay: .004 + Math.random() * .004, tw: Math.random() * 6 });
+    }
+    // Raketen
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      const r = rockets[i];
+      r.x += r.vx * dt; r.y += r.vy * dt; r.vy += .06 * dt;
+      g.globalCompositeOperation = "lighter";
+      g.fillStyle = "rgba(255,230,180,.9)"; g.beginPath(); g.arc(r.x, r.y, 2, 0, 7); g.fill();
+      if (Math.random() < .8) parts.push({ k: "spark", x: r.x, y: r.y, vx: (Math.random() - .5) * .4, vy: Math.random() * .6, s: 1.4, life: .7, decay: .03, c: "#ffcf7a" });
+      if (r.vy >= -0.4 || r.y <= r.ty) { rockets.splice(i, 1); explode(r.x, r.y, r.colors); }
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.life -= p.decay * dt;
+      if (p.life <= 0 || p.y > h + 40) { parts.splice(i, 1); continue; }
+      if (p.k === "conf") {
+        p.vy += .09 * dt; p.vx *= Math.pow(.985, dt); p.vy *= Math.pow(.985, dt);
+        p.ph += p.fs * dt; p.vx += Math.sin(p.ph) * .06 * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        g.globalCompositeOperation = "source-over";
+        g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.scale(1, Math.cos(p.ph * 1.7));
+        g.globalAlpha = Math.min(1, p.life * 1.5); g.fillStyle = p.c;
+        if (p.ribbon) g.fillRect(-p.sw / 2, -1.3, p.sw, 2.6); else g.fillRect(-p.sw / 2, -p.sh / 2, p.sw, p.sh);
+        g.restore();
+      } else if (p.k === "spark" || p.k === "fw") {
+        p.vy += (p.k === "fw" ? .035 : .02) * dt; p.vx *= Math.pow(.97, dt); p.vy *= Math.pow(.97, dt);
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        g.globalCompositeOperation = "lighter"; g.globalAlpha = Math.max(0, p.life);
+        g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, p.s * (p.k === "fw" ? (0.6 + p.life) : 1), 0, 7); g.fill();
+      } else {
+        p.x += p.vx * dt; p.y += p.vy * dt; p.tw += .08 * dt;
+        g.globalCompositeOperation = "lighter"; g.globalAlpha = Math.max(0, p.life) * (.35 + .65 * Math.abs(Math.sin(p.tw)));
+        g.fillStyle = "#ffe6b0"; g.beginPath(); g.arc(p.x, p.y, p.s, 0, 7); g.fill();
+      }
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+    if (parts.length || rockets.length || dustOn) raf = requestAnimationFrame(loop);
+  }
+  function kick() { if (!raf && alive()) { last = 0; raf = requestAnimationFrame(loop); } }
+  function confetti(x, y, n, spread, power, colors, angle = -90) {
+    if (!alive()) return;
+    for (let i = 0; i < n && parts.length < 900; i++) {
+      const a = (angle + (Math.random() - .5) * spread) * Math.PI / 180, v = power * (.55 + Math.random() * .7);
+      parts.push({ k: "conf", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: Math.random() * 6, vr: (Math.random() - .5) * .3,
+        ph: Math.random() * 6, fs: .05 + Math.random() * .12, sw: 5 + Math.random() * 6, sh: 3 + Math.random() * 5, ribbon: Math.random() < .25,
+        c: (colors || PARTY)[i % (colors || PARTY).length], life: 1, decay: .0035 + Math.random() * .002 });
+    }
+    kick();
+  }
+  function explode(x, y, colors) {
+    const n = 70;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, v = 2.2 + Math.random() * 2.2;
+      parts.push({ k: "fw", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, s: 1.6, life: 1, decay: .012 + Math.random() * .01, c: colors[i % colors.length] });
+    }
+  }
+  function firework(colors) {
+    if (!alive()) return;
+    rockets.push({ x: w * (.2 + Math.random() * .6), y: h, vx: (Math.random() - .5) * 1.2, vy: -(7 + Math.random() * 2.5), ty: h * (.12 + Math.random() * .25), colors: colors || PARTY });
+    kick();
+  }
+  return {
+    attach,
+    start() { dustOn = true; resize(); kick(); },
+    stop() { dustOn = false; },
+    // Kanonen links/rechts unten schießen schräg nach oben in die Mitte
+    cannons(n = 90) { confetti(w * .04, h * .98, n, 26, 13, PARTY, -62); setTimeout(() => confetti(w * .96, h * .98, n, 26, 13, PARTY, -118), 120); },
+    puff(x, y, colors) { confetti(x, y, 40, 70, 7, colors); },
+    rain(n = 120) { if (!alive()) return; for (let i = 0; i < n; i++) setTimeout(() => confetti(Math.random() * w, -10, 1, 60, 1, GOLD.concat(PARTY)), i * 12); },
+    firework, GOLD, PARTY,
+    rectOf(el) { if (!canvas || !el) return null; const a = canvas.getBoundingClientRect(), b = el.getBoundingClientRect(); return { x: b.left - a.left + b.width / 2, y: b.top - a.top }; },
+  };
+})();
+function ensureFinalFx(stage) {
+  if (!stage || stage.querySelector("#podium-fx")) return;
+  const beams = document.createElement("div"); beams.className = "podium-beams"; beams.innerHTML = "<i class=beam></i><i class=beam></i><i class=beam></i><i class=beam></i>";
+  const haze = document.createElement("div"); haze.className = "podium-haze";
+  const gloss = document.createElement("div"); gloss.className = "podium-gloss";
+  const flash = document.createElement("div"); flash.className = "podium-flash"; flash.id = "podium-flash";
+  const cv = document.createElement("canvas"); cv.id = "podium-fx"; cv.setAttribute("aria-hidden", "true");
+  stage.prepend(beams, haze, gloss);
+  stage.append(cv, flash);
+  stage.querySelectorAll(".podium-pillar").forEach(pl => { if (!pl.querySelector(".pillar-shine")) { const sh = document.createElement("span"); sh.className = "pillar-shine"; pl.appendChild(sh); } });
+  PodiumFx.attach(cv);
+}
+/** Zahl von 0 hochzählen (für die Punkte am Podest) */
+function countUpScore(el, target, ms) {
+  if (!el) return;
+  const t0 = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = (target * e).toFixed(1) + " ★";
+    if (k < 1 && document.querySelector("#scr-final.active")) requestAnimationFrame(step);
+    else el.textContent = target.toFixed(1) + " ★";
+  };
+  requestAnimationFrame(step);
+}
 function showFinal(list, rounds, championName) {
   try { achOnFinal(list, championName); } catch (e) { console.warn("Erfolge:", e); }
   show("scr-final");
@@ -10310,7 +10444,10 @@ function showFinal(list, rounds, championName) {
     : rounds + (rounds > 1 ? tt(" rounds played — here’s the overall score:", " Runden gespielt — hier ist eure Gesamtwertung:") : tt(" round played — here’s the overall score:", " Runde gespielt — hier ist eure Gesamtwertung:"));
 
   const stage = $("podium-stage");
-  if (stage) stage.classList.remove("alive");
+  if (stage) stage.classList.remove("alive", "lit", "shake");
+  ensureFinalFx(stage);
+  document.querySelectorAll("#podium-stage .podium-crown").forEach(c => c.remove());
+  const rank1 = document.querySelector("#podium-1 .podium-rank"); if (rank1) rank1.textContent = "1";
   const champEl = $("podium-champ");
   if (champEl) { champEl.textContent = ""; champEl.classList.remove("show"); }
 
@@ -10323,7 +10460,11 @@ function showFinal(list, rounds, championName) {
     const p = players.find(pl => pl.id === entry.id);
     el.querySelector(".p-avatar-wrap").innerHTML = p ? avatarHTML(p) : "";
     el.querySelector(".p-name").textContent = entry.name;
-    el.querySelector(".p-score").textContent = entry.sum.toFixed(1) + " ★";
+    el.querySelector(".p-score").textContent = "0.0 ★";
+    el.dataset.score = String(entry.sum || 0);
+    const medal = document.createElement("span"); medal.className = "p-medal";
+    el.querySelector(".p-avatar-wrap").appendChild(medal);
+    medal.textContent = slotId === "podium-1" ? "🥇" : slotId === "podium-2" ? "🥈" : "🥉";
   };
   fillSlot("podium-1", top3[0]);
   fillSlot("podium-2", top3[1]);
@@ -10374,6 +10515,8 @@ function showFinal(list, rounds, championName) {
   setTimeout(() => {
     blackout.classList.remove("in");
     blackout.classList.add("out");
+    if (stage) stage.classList.add("lit");
+    PodiumFx.start();
   }, REVEAL_START - 400);
 
   let t = REVEAL_START;
@@ -10385,8 +10528,21 @@ function showFinal(list, rounds, championName) {
       const el = $(step.id);
       if (!el) return;
       el.classList.add("show", "pop");
+      setTimeout(() => countUpScore(el.querySelector(".p-score"), Number(el.dataset.score) || 0, step.winner ? 1600 : 900), 550);
+      const pillarPos = PodiumFx.rectOf(el.querySelector(".podium-pillar"));
       if (step.winner) {
         SFX.winner();
+        // Blitz + Ruck + Krone + Feuerwerk
+        const fl = $("podium-flash"); if (fl) { fl.classList.remove("go"); void fl.offsetWidth; fl.classList.add("go"); }
+        if (stage) { stage.classList.remove("shake"); void stage.offsetWidth; stage.classList.add("shake"); }
+        const aw = el.querySelector(".p-avatar-wrap");
+        if (aw && !aw.querySelector(".podium-crown")) {
+          const cr = document.createElement("span"); cr.className = "podium-crown"; cr.textContent = "👑"; aw.appendChild(cr);
+          setTimeout(() => cr.classList.add("drop"), 650);
+        }
+        setTimeout(() => PodiumFx.cannons(), 300);
+        [900, 1500, 2300, 3200].forEach((d, k) => setTimeout(() => PodiumFx.firework(k % 2 ? PodiumFx.GOLD : PodiumFx.PARTY), d));
+        setTimeout(() => PodiumFx.rain(140), 1200);
         // Applaus-Stärke nach Abstand Platz 1 ↔ 2
         const gap = top3[1] ? Math.max(0, (top3[0].sum || 0) - (top3[1].sum || 0)) : 99;
         let vol = 0.42, holdMs = 9000, label = "knapp";
@@ -10395,9 +10551,8 @@ function showFinal(list, rounds, championName) {
         else if (gap >= 0.4) { vol = 0.5; holdMs = 10500; label = "solide"; }
         const applause = SFX.applause(vol);
         setTimeout(() => SFX.fadeStop(applause, 1800), holdMs);
-        burstConfetti(true);
-        setTimeout(() => burstConfetti(true), 700);
-        setTimeout(() => burstConfetti(gap >= 1 ? true : false), 1400);
+        burstConfetti(true);   // zusätzlich bildschirmweit, das Bühnen-Konfetti kommt aus den Kanonen
+        if (gap >= 2.5 || !top3[1]) [4200, 5200].forEach(d => setTimeout(() => PodiumFx.firework(PodiumFx.GOLD), d));
         if (stage) stage.classList.add("alive");
         if (champEl && top3[0]) {
           const gapTxt = top3[1] ? (label === "dominant" ? tt(" · no contest!", " · klare Sache!") : label === "knapp" ? tt(" · close win!", " · knapper Sieg!") : "") : "";
@@ -10406,7 +10561,8 @@ function showFinal(list, rounds, championName) {
         }
       } else {
         SFX.beep();
-        burstConfetti(false);
+        if (pillarPos) PodiumFx.puff(pillarPos.x, pillarPos.y, step.id === "podium-2" ? ["#f2f2fa", "#c8c8d4", "#ffffff", "#9a9aac"] : ["#f0a868", "#d4884a", "#ffd0a0", "#a8642a"]);
+        else burstConfetti(false);
       }
     }, t + 140);
     t += step.gap;
@@ -13194,11 +13350,40 @@ function premGraph(ctx, v) {
     const out = makeLimiter(ctx);
     voiceGain.connect(comp); vidGain.connect(comp);
     comp.connect(masterGain); masterGain.connect(out); out.connect(hearGain); hearGain.connect(ctx.destination);
-    elementSource(ctx, v).connect(vidGain);
-    premNodes = { comp, masterGain, voiceGain, vidGain, hearGain, out };
+    // Ducking: Musik/Backing-Track geht automatisch runter, solange jemand spricht
+    const duckGain = ctx.createGain();
+    elementSource(ctx, v).connect(duckGain); duckGain.connect(vidGain);
+    premNodes = { comp, masterGain, voiceGain, vidGain, hearGain, out, duckGain };
     applyPremVol();
   }
   return premNodes;
+}
+// ── Ducking ───────────────────────────────────────────────────
+// Während einer Stimme läuft die Musik leiser (−6 dB), dazwischen wieder voll. Weich ein- und
+// ausgeblendet, kurze Pausen zwischen Zeilen werden überbrückt (kein Pumpen).
+const DUCK_LEVEL = 0.5, DUCK_ATTACK = 0.12, DUCK_RELEASE = 0.4, DUCK_BRIDGE = 0.6;
+function scheduleDucking(param, windows, from) {
+  try {
+    param.cancelScheduledValues(0);
+    param.setValueAtTime(1, from);
+    const ws = windows.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+    const merged = [];
+    for (const [a, b] of ws) {
+      const last = merged[merged.length - 1];
+      if (last && a - last[1] < DUCK_BRIDGE) last[1] = Math.max(last[1], b);
+      else merged.push([a, b]);
+    }
+    let cursor = from;
+    for (const [a, b] of merged) {
+      const start = Math.max(cursor, a - DUCK_ATTACK);
+      if (b <= start) continue;
+      param.setValueAtTime(1, start);
+      param.linearRampToValueAtTime(DUCK_LEVEL, Math.max(start + 0.01, a));
+      param.setValueAtTime(DUCK_LEVEL, Math.max(start + 0.02, b));
+      param.linearRampToValueAtTime(1, b + DUCK_RELEASE);
+      cursor = b + DUCK_RELEASE;
+    }
+  } catch (e) { console.warn("Ducking:", e); try { param.value = 1; } catch {} }
 }
 function makeLimiter(ctx) {
   const lim = ctx.createDynamicsCompressor();
@@ -13277,6 +13462,8 @@ async function exportAudioFast() {
     comp.connect(mGain); mGain.connect(lim); lim.connect(offlineCtx.destination);
     const master = offlineCtx.createGain(); master.gain.value = premVol.voice; master.connect(comp);
     const vidG = offlineCtx.createGain(); vidG.gain.value = premVol.video; vidG.connect(comp);
+    const duckG = offlineCtx.createGain(); duckG.connect(vidG);
+    const duckWins = [];
 
     // Video-eigene Tonspur (Musik/SFX) mit reinrechnen
     try {
@@ -13284,7 +13471,7 @@ async function exportAudioFast() {
       const videoAudio = await offlineCtx.decodeAudioData(videoBuf.slice(0));
       const vSrc = offlineCtx.createBufferSource();
       vSrc.buffer = videoAudio;
-      vSrc.connect(vidG);
+      vSrc.connect(duckG);
       vSrc.start(0);
     } catch (e) { console.warn("Video-Ton nicht verfügbar für Offline-Export:", e); }
 
@@ -13321,7 +13508,9 @@ async function exportAudioFast() {
       const when = Math.max(0, item.startAt + syncOffsetMs / 1000);
       connectChain(src, offlineCtx, role, master, lineEnvelope(offlineCtx, src, when, maxDur / rate));
       src.start(when, 0, maxDur);
+      duckWins.push([when, when + maxDur / rate]);
     }
+    scheduleDucking(duckG.gain, duckWins, 0);
 
     const rendered = await offlineCtx.startRendering();
     const blob = audioBufferToWav(rendered);
@@ -13838,6 +14027,7 @@ async function playMixInternal(opts) {
   }
   const t0 = ctx.currentTime;
   const off = syncOffsetMs / 1000;
+  const duckWins = [];
 
   for (const item of mixItems) {
     if (item.isOrig && !isOrigItemAudible(item)) continue;
@@ -13870,6 +14060,7 @@ async function playMixInternal(opts) {
       maxDur = Math.min(maxDur, windowSec * _rate);
     }
     const when = t0 + item.startAt + off;
+    duckWins.push([when, when + maxDur / _rate]);
     if (when >= ctx.currentTime) {
       connectChain(src, ctx, role, dest, lineEnvelope(ctx, src, when, maxDur / _rate));
       src.start(when, 0, maxDur);
@@ -13882,6 +14073,7 @@ async function playMixInternal(opts) {
     }
     playNodes.push(src);
   }
+  if (g.duckGain) scheduleDucking(g.duckGain.gain, duckWins, ctx.currentTime);
   // Gleichlauf Bild ↔ Stimmen. Die Stimmen laufen auf der Uhr des AudioContext, das Video
   // auf seiner eigenen. Lädt das Video mitten in der Premiere nach (große Szenen, langsames
   // Netz), lief bisher der Ton einfach weiter — ab da war die ganze Szene versetzt.
@@ -13901,6 +14093,7 @@ async function playMixInternal(opts) {
   // Videoende = ALLES stoppt → kein 1–2s-Nachlauf-Audio mehr
   v.addEventListener("ended", () => {
     playNodes.forEach(n => { try { n.stop(); } catch {} });
+    if (g.duckGain) { try { g.duckGain.gain.cancelScheduledValues(0); g.duckGain.gain.value = 1; } catch {} }
     premPaused = false;
     updatePremPauseBtn();
     if (pendingRate && !saveFile) { pendingRate = false; showRateCard(); }

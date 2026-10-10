@@ -338,14 +338,14 @@ export default function App() {
 
   // Set favicon dynamically
   useEffect(() => {
-    const faviconUrl = "https://i.ibb.co/qMLtgW2g/faviconcv.png";
+    const faviconUrl = "./icon.svg";
     let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
     if (!link) {
       link = document.createElement("link");
       link.rel = "icon";
       document.head.appendChild(link);
     }
-    link.type = "image/png";
+    link.type = "image/svg+xml";
     link.href = faviconUrl;
 
     let appleLink = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;

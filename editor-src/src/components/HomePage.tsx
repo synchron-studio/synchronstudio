@@ -72,14 +72,14 @@ export const HomePage: React.FC<HomePageProps> = ({
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 space-y-8">
         {/* Game Header */}
         <div className="flex justify-center mb-8">
-          <img src="https://i.ibb.co/PzjnXrhK/vclogo.png" alt="Game Logo" draggable={false} className="h-20 object-contain" />
+          <img src="./logo.svg" alt="Synchronstudio" draggable={false} className="h-20 object-contain" />
         </div>
 
         {/* Active Project Resume / New Project Banner */}
         {currentActiveProject ? (
           <div className="bg-gradient-to-r from-amber-500/15 via-zinc-900 to-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg">
             <div className="flex items-center gap-4">
-              <img src="https://i.ibb.co/qMLtgW2g/faviconcv.png" alt="Game Logo" draggable={false} className="h-12 w-12 object-contain shrink-0" />
+              <img src="./icon.svg" alt="" draggable={false} className="h-12 w-12 object-contain shrink-0" />
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-amber-400 bg-amber-500/20 border border-zinc-800 px-2 py-0.5 rounded-full">
@@ -115,7 +115,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         ) : (
           <div className="bg-gradient-to-r from-amber-500/15 via-zinc-900 to-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg">
             <div className="flex items-center gap-4">
-              <img src="https://i.ibb.co/qMLtgW2g/faviconcv.png" alt="Game Logo" draggable={false} className="h-12 w-12 object-contain shrink-0" />
+              <img src="./icon.svg" alt="" draggable={false} className="h-12 w-12 object-contain shrink-0" />
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-amber-400 bg-amber-500/20 border border-zinc-800 px-2 py-0.5 rounded-full">
@@ -199,7 +199,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           >
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-zinc-800 flex items-center justify-center transition-colors overflow-hidden">
-                <img src="https://i.ibb.co/FLHzb9ks/cvmmdfile.png" alt="CVMMD File Icon" className="w-6 h-6 object-contain" referrerPolicy="no-referrer" />
+                <img src="./draft-file.svg" alt="Draft file" className="w-6 h-6 object-contain" />
               </div>
               <span className="text-xs text-zinc-500 group-hover:text-amber-400 transition-colors">Import Draft</span>
             </div>
