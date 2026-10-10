@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.28.1";
+const APP_VERSION = "9.28.2";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -68,6 +68,9 @@ const OVERSIZE_MP4 = new Set([
   "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil4.mp4", // 62.0 MB (automatisch importiert)
   "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil5.mp4", // 56.6 MB (automatisch importiert)
   "scenes/demon_slayer_hashira_training_drill_sane.mp4", // 51.0 MB (automatisch importiert)
+  "scenes/upper_moon_meeting.mp4", // 43.8 MB (automatisch importiert)
+  "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte_teil1.mp4", // 48.1 MB (automatisch importiert)
+  "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte_teil2.mp4", // 72.9 MB (automatisch importiert)
 ]);
 function useCdnAssets() {
   try { return /\.github\.io$/i.test(location.hostname); } catch { return false; }
@@ -848,6 +851,15 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.28.2", items: [
+    "🎬 Neue Szene: Upper Moon Meeting",
+    "🎬 Neue Szene: Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2",
+    "🎬 Neue Szene: Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2"
+  ], itemsEn: [
+    "🎬 New scene: Upper Moon Meeting",
+    "🎬 New scene: Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2",
+    "🎬 New scene: Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2"
+  ]},
   { v: "9.28.1", items: [
     "🎬 Neue Szene: DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon"
   ], itemsEn: [
@@ -2343,6 +2355,20 @@ const AVATAR_CHARS = [
   { img: "scenes/nobara_ruins_gojo_s_shirt/satoru_gojo.png", label: "Satoru Gojo · Nobara Ruins Gojo's Shirt" },
   { img: "scenes/demon_slayer_shinobu_vs_douma_compound_e/shinobu.png", label: "Shinobu · DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon" },
   { img: "scenes/demon_slayer_shinobu_vs_douma_compound_e/douma.png", label: "Douma · DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon" },
+  { img: "scenes/upper_moon_meeting/akaza.png", label: "Akaza · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/gyokko.png", label: "Gyokko · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/hantengu.png", label: "Hantengu · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/nakime.png", label: "Nakime · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/doma.png", label: "Doma · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/kokushibo.png", label: "Kokushibo · Upper Moon Meeting" },
+  { img: "scenes/upper_moon_meeting/muzan.png", label: "Muzan · Upper Moon Meeting" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/zenitsu.png", label: "Zenitsu · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/kaigaku.png", label: "Kaigaku · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/kokushibo.png", label: "Kokushibo · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/jigoro_aka_gramps.png", label: "Jigoro aka Gramps · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 1/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/demon_slayer_boy_1.png", label: "Demon Slayer Boy 1 · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/demon_slayer_boy_2.png", label: "Demon Slayer Boy 2 · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
+  { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/yushiro.png", label: "Yushiro · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
