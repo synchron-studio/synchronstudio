@@ -852,7 +852,10 @@ const PATCH_NOTES = [
     "🔊 Effekte machen die Stimme nicht mehr lauter: Studio, Flüstern, Schreien, Telefon & Co. klingen wie bisher, werden aber automatisch auf die Lautstärke ohne Effekt angeglichen (vorher teils über 10 dB lauter) — in Premiere, Export und beim Vorhören",
     "🎙 Studio-Aufbereitung: Rauschen weg und klarer, aber kein Lautstärke-Boost mehr",
     "📦 Szenen-Import: GameBanana-Anfragen-Links werden erkannt (Szene wird eingebaut, sobald jemand sie hochgeladen hat)",
-    "🎬 Neue Szene: Nobara Ruins Gojo's Shirt",
+  ], itemsEn: [
+    "🔊 Effects no longer make the voice louder: Studio, Whisper, Shout, Phone & co. sound the same but are automatically matched to the volume without the effect (some were 10+ dB louder) — in premiere, export and preview",
+    "🎙 Studio clean-up: less noise and clearer, but no more volume boost",
+    "📦 Scene import: GameBanana request links are recognized (scene gets added once someone uploads it)",
   ] },
   { v: "9.27.4", items: [
     "🎬 Neue Szene: Nobara Ruins Gojo's Shirt"
