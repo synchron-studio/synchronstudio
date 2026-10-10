@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.28.0";
+const APP_VERSION = "9.28.1";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -848,6 +848,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.28.1", items: [
+    "🎬 Neue Szene: DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon"
+  ], itemsEn: [
+    "🎬 New scene: DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon"
+  ]},
   { v: "9.28.0", items: [
     "🔊 Effekte machen die Stimme nicht mehr lauter: Studio, Flüstern, Schreien, Telefon & Co. klingen wie bisher, werden aber automatisch auf die Lautstärke ohne Effekt angeglichen (vorher teils über 10 dB lauter) — in Premiere, Export und beim Vorhören",
     "🎙 Studio-Aufbereitung: Rauschen weg und klarer, aber kein Lautstärke-Boost mehr",
@@ -2336,6 +2341,8 @@ const AVATAR_CHARS = [
   { img: "scenes/nobara_ruins_gojo_s_shirt/yuji_itadori.png", label: "Yuji Itadori · Nobara Ruins Gojo's Shirt" },
   { img: "scenes/nobara_ruins_gojo_s_shirt/megumi_fushiguro.png", label: "Megumi Fushiguro · Nobara Ruins Gojo's Shirt" },
   { img: "scenes/nobara_ruins_gojo_s_shirt/satoru_gojo.png", label: "Satoru Gojo · Nobara Ruins Gojo's Shirt" },
+  { img: "scenes/demon_slayer_shinobu_vs_douma_compound_e/shinobu.png", label: "Shinobu · DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon" },
+  { img: "scenes/demon_slayer_shinobu_vs_douma_compound_e/douma.png", label: "Douma · DEMON SLAYER — Shinobu vs Douma Compound Eye Hexagon" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
