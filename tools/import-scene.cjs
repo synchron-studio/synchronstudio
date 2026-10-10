@@ -724,12 +724,18 @@ function expandRequests(lines, failed, summary) {
       if (typeof v === 'string') for (const x of v.matchAll(/gamebanana\.com\/mods\/(\d+)/gi)) ids.add(x[1]);
     };
     let name = '';
+    const seen = [];
     for (const url of [`${base}/Request/${rm[1]}/ProfilePage`, `${base}/Request/${rm[1]}/Submissions?_nPage=1&_nPerpage=15`, `${base}/Request/${rm[1]}/Fulfillments?_nPage=1&_nPerpage=15`]) {
-      try { const j = JSON.parse(curl([url]).toString('utf8')); name = name || j._sName || ''; walk(j); } catch (e) { /* Endpunkt gibt es evtl. nicht */ }
+      try { const t = curl([url]).toString('utf8'); seen.push(t); const j = JSON.parse(t); name = name || j._sName || ''; walk(j); } catch (e) { seen.push(`${url}: ${String(e.message).split('\n')[0]}`); }
     }
     if (!ids.size) {
       // Notfalls die Webseite selbst nach Mod-Links durchsuchen
-      try { walk(curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8')); } catch (e) { /* egal */ }
+      try { const t = curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8'); seen.push(t); walk(t); } catch (e) { /* egal */ }
+    }
+    if (!ids.size && process.env.GITHUB_STEP_SUMMARY) {
+      // Zur Fehlersuche: was GameBanana zu der Anfrage geliefert hat (inkl. aller Links darin)
+      const links = [...new Set(seen.join('\n').match(/https?:\/\/[^\s"'<>\\]+/g) || [])].filter(u => !/\.(?:png|jpe?g|webp|gif|svg|css|js|woff2?)(?:\?|$)/i.test(u));
+      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n<details><summary>Anfrage ${rm[1]} – Rohdaten</summary>\n\n\`\`\`\n${seen.map(x => x.slice(0, 3000)).join('\n----\n').replace(/\`/g, "'")}\n\`\`\`\n\nLinks: ${links.slice(0, 80).join(' ')}\n</details>\n`);
     }
     if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden.` }); continue; }
     summary.push(`- GameBanana-Anfrage ${rm[1]} „${name || '?'}“ → Mod ${[...ids].join(', ')}`);

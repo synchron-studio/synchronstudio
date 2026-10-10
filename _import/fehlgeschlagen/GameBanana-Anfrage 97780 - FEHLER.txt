@@ -1,6 +1,0 @@
-Diese Szene wurde NICHT eingebaut.
-
-Grund:
-Zur Anfrage „Krusty Krab Pizza ENGLISH“ wurde (noch) kein fertiger Mod mit Download gefunden.
-
-Nach dem Beheben das ZIP (bzw. den Link in _import/links.txt) einfach nochmal hochladen.
