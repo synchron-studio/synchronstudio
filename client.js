@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.27.4";
+const APP_VERSION = "9.28.0";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -848,6 +848,12 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.28.0", items: [
+    "🔊 Effekte machen die Stimme nicht mehr lauter: Studio, Flüstern, Schreien, Telefon & Co. klingen wie bisher, werden aber automatisch auf die Lautstärke ohne Effekt angeglichen (vorher teils über 10 dB lauter) — in Premiere, Export und beim Vorhören",
+    "🎙 Studio-Aufbereitung: Rauschen weg und klarer, aber kein Lautstärke-Boost mehr",
+    "📦 Szenen-Import: GameBanana-Anfragen-Links werden erkannt (Szene wird eingebaut, sobald jemand sie hochgeladen hat)",
+    "🎬 Neue Szene: Nobara Ruins Gojo's Shirt",
+  ] },
   { v: "9.27.4", items: [
     "🎬 Neue Szene: Nobara Ruins Gojo's Shirt"
   ], itemsEn: [
@@ -6969,11 +6975,21 @@ function denoiseChannel(x, strength, sampleRate) {
 }
 function gsPrevSafe(arr, b) { const v = arr[b]; return isFinite(v) ? v : 1; }
 
+// Mittlerer Pegel der wirklich gesprochenen Stellen (Knacken/Atmen/Stille zählen nicht)
+function sprachPegel(d) {
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+  const schwelle = peak * 0.16;
+  let sq = 0, n = 0;
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > schwelle) { sq += d[i] * d[i]; n++; } }
+  return n > 64 ? Math.sqrt(sq / n) : 0;
+}
 function studioEnhanceBuffer(ctx, buffer, strength) {
   try {
     const s = Math.max(0, Math.min(1, strength === undefined ? 1 : strength));
     const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
     let peak = 0;
+    const rohSprache = sprachPegel(buffer.getChannelData(0));   // so laut war die Stimme vorher
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       // Gleichspannungs-Versatz abziehen. Viele billige Mikros liefern eine leicht
       // verschobene Nulllinie -- das kostet Pegel und macht den Klang matschig.
@@ -6990,17 +7006,12 @@ function studioEnhanceBuffer(ctx, buffer, strength) {
       for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; }
     }
 
-    // Lautheit statt Spitzenwert angleichen: ein einzelnes Knacken oder Atmen setzt sonst
-    // den Spitzenwert, und die eigentliche Stimme bleibt zu leise. Gemessen wird deshalb
-    // der Mittelwert der wirklich gesprochenen Stellen.
-    const d0 = out.getChannelData(0);
-    const schwelle = peak * 0.16;
-    let sq = 0, n = 0;
-    for (let i = 0; i < d0.length; i++) { const a = Math.abs(d0[i]); if (a > schwelle) { sq += d0[i] * d0[i]; n++; } }
-    const rms = n > 64 ? Math.sqrt(sq / n) : 0;
-    let gain = rms > 0.0005 ? 0.13 / rms : (peak > 0.001 ? 0.7 / peak : 1);
-    gain = Math.max(1, Math.min(4, gain));
-    if (peak * gain > 0.94) gain = 0.94 / Math.max(peak, 1e-6);   // nichts uebersteuern lassen
+    // Nur den Pegel zurückholen, den die Rauschentfernung gekostet hat – die Stimme soll
+    // durch den Effekt klarer werden, aber nicht lauter als vorher (früher bis zu 4× lauter).
+    const rms = sprachPegel(out.getChannelData(0));
+    let gain = (rms > 0.0005 && rohSprache > 0) ? rohSprache / rms : 1;
+    gain = Math.max(1, Math.min(2, gain));
+    if (peak * gain > 0.94) gain = Math.max(1, 0.94 / Math.max(peak, 1e-6));   // nichts uebersteuern lassen
     if (gain !== 1) {
       for (let ch = 0; ch < out.numberOfChannels; ch++) {
         const d = out.getChannelData(ch);
@@ -9191,6 +9202,8 @@ $("btn-line-play").onclick = async () => {
     v.pause(); v.currentTime = l.t; v.volume = boothVol * 0.6; v.playbackRate = 1;
     await v.play().catch(() => {});   // Bild ist nur Beiwerk — der Take soll trotzdem hörbar sein
     if (myLines[curLine] !== l) return;
+    await prepareFxTrim(buf, effRole);
+    if (myLines[curLine] !== l) return;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = effectPitch(effRole.effect);
@@ -9341,15 +9354,18 @@ async function fxPreview() {
 }
 
 function stopFxPreview() {
+  fxPreviewToken++;
   if (fxPreviewSrc) { try { fxPreviewSrc.stop(); } catch {} fxPreviewSrc = null; }
   const btn = $("btn-fx-preview"); if (btn) btn.textContent = t("booth.fx.prev");
 }
 
-function startFxPreview() {
+let fxPreviewToken = 0;
+async function startFxPreview() {
   const l = myLines[curLine];
   const btn = $("btn-fx-preview");
   if (!l || !fxPreviewRaw) return;
   if (fxPreviewSrc) { try { fxPreviewSrc.stop(); } catch {} fxPreviewSrc = null; }
+  const token = ++fxPreviewToken;
   const ctx = getCtx();
   const role = myEffectiveRole(l);
   // Aufbereitung kann bei „Studio" rechenintensiv sein -> Ergebnis je Einstellung merken,
@@ -9361,6 +9377,8 @@ function startFxPreview() {
     buf = fxPreviewIsTake ? processTakeBuffer(ctx, fxPreviewRaw, micSettings.gate, role.effect, role.fxAmount) : fxPreviewRaw;
     fxPreviewCacheKey = key; fxPreviewCacheBuf = buf;
   }
+  await prepareFxTrim(buf, role);
+  if (token !== fxPreviewToken || myLines[curLine] !== l) return;   // inzwischen neu gestartet / andere Line
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = effectPitch(role.effect);
@@ -13517,12 +13535,10 @@ async function exportAudioFast() {
       vSrc.start(0);
     } catch (e) { console.warn("Video-Ton nicht verfügbar für Offline-Export:", e); }
 
+    await prepareMixFxTrims();
     for (const item of mixItems) {
       if (item.isOrig && !isOrigItemAudible(item)) continue;
-      let role = item.role != null ? (roleOf(item.role) || { pan: 0, effect: "none", gain: 1 }) : { pan: 0, effect: "none", gain: 1 };
-      if (scene.lines && item.lineIdx != null) role = effectiveRole(role, scene.lines[item.lineIdx]);
-      if (item.effect) role = { ...role, effect: item.effect };
-      if (item.fxAmount !== undefined) role = { ...role, fxAmount: item.fxAmount };
+      let role = mixItemBaseRole(item);
       if (item.boost != null && item.boost !== 1) role = { ...role, gain: (role.gain ?? 1) * item.boost };
       // Host-Mitspieler-Lautstärke auch im schnellen Ton-Export
       if (!item.isOrig && item.role != null) {
@@ -14051,6 +14067,7 @@ async function playMixInternal(opts) {
     }
   }
 
+  await prepareMixFxTrims();   // Effekt-Lautstärken vorher messen (meist < 1 s, danach gemerkt)
   v.pause(); v.currentTime = 0;
   await playMedia(v);
   const recT0 = performance.now();
@@ -14073,10 +14090,7 @@ async function playMixInternal(opts) {
 
   for (const item of mixItems) {
     if (item.isOrig && !isOrigItemAudible(item)) continue;
-    let role = item.role != null ? (roleOf(item.role) || { pan: 0, effect: "none", gain: 1 }) : { pan: 0, effect: "none", gain: 1 };
-    if (scene.lines && item.lineIdx != null) role = effectiveRole(role, scene.lines[item.lineIdx]);
-    if (item.effect) role = { ...role, effect: item.effect };   // Spieler-eigene Wahl übersticht alles andere
-    if (item.fxAmount !== undefined) role = { ...role, fxAmount: item.fxAmount };
+    let role = mixItemBaseRole(item);
     // „Deine Lautstärke“ aus der Booth — fehlte hier bisher (Export hatte es, Premiere nicht)
     if (item.boost != null && item.boost !== 1) role = { ...role, gain: (role.gain ?? 1) * item.boost };
     // Spieler-Stimmen: Pan aus der Booth (Default Mitte). Original-Lücken behalten Szenen-Pan.
@@ -14192,8 +14206,104 @@ $("sync-offset").oninput = (e) => {
 // brauchen einen Oszillator (LFO), der dauerhaft läuft. Früher wurde der nie gestoppt:
 // jede Wiedergabe/Vorschau ließ neue Oszillatoren weiterlaufen — der Ton-Graph wuchs
 // und kostete immer mehr Rechenzeit. Jetzt enden sie zusammen mit ihrer Quelle.
-function connectChain(src, ctx, role, dest, via) {
-  const chain = buildChain(ctx, role, dest);
+// ── Effekt-Lautstärke angleichen ──────────────────────────────────────────────
+// Viele Effekte (Studio, Flüstern, Schreien, Telefon …) verdichten und verzerren die Stimme
+// und machten sie dadurch bis zu ~19 dB lauter als ohne Effekt. Der Klang soll bleiben, nur
+// die Lautstärke nicht steigen: Jede Aufnahme wird einmal unhörbar mit ihrem Effekt
+// durchgerechnet und – falls lauter – genau auf die Lautheit ohne Effekt zurückgenommen.
+// Leiser machende Effekte (weit weg, hinter der Tür …) bleiben bewusst leiser.
+const FX_TRIM_FALLBACK_DB = {   // gemessen an einer lauten Sprachaufnahme – nur bis die Messung fertig ist
+  studio: 10, whisper: 11, shout: 12, inner: 6, vintage_1990: 6, telefon: 5.5, monster: 5, pa: 3.5,
+  helmet: 3.5, titan: 3, radio: 3, tv: 3, demon: 2.5, helium: 1.5, megaphone: 1.5, chipmunk: 1
+};
+const _fxTrimCache = new WeakMap();
+function fxTrimKey(role) {
+  const a = role.fxAmount;
+  return (role.effect || "none") + "|" + ((a === undefined || a === null) ? 1 : a);
+}
+function fxNeedsTrim(role) {
+  const a = role && role.fxAmount;
+  return !!(role && role.effect && role.effect !== "none" && EFFECTS[role.effect] && !(a !== undefined && a !== null && a <= 0));
+}
+function fxLoudnessOf(buf) {
+  // K-gewichtete, geschleuste Lautheit (vereinfachtes LUFS) – 400-ms-Blöcke, relatives Gate
+  const sr = buf.sampleRate, blk = Math.round(sr * 0.4), hop = Math.round(sr * 0.1);
+  const chs = []; for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+  const ms = [];
+  for (let i = 0; i + blk <= buf.length; i += hop) {
+    let sum = 0;
+    for (const d of chs) for (let j = i; j < i + blk; j++) sum += d[j] * d[j];
+    ms.push(sum / (blk * chs.length));
+  }
+  const abs = ms.filter(m => m > 1e-7);
+  if (!abs.length) return 0;
+  const g = abs.reduce((a, b) => a + b, 0) / abs.length;
+  const rel = abs.filter(m => m > g * 0.1);
+  return rel.reduce((a, b) => a + b, 0) / rel.length;
+}
+async function measureFxTrim(buffer, role) {
+  const sr = buffer.sampleRate;
+  const len = Math.min(buffer.length, Math.round(sr * 12));
+  const rate = effectPitch(role.effect) || 1;
+  const render = async (withFx) => {
+    const ctx = new OfflineAudioContext(2, Math.ceil(len / Math.min(1, rate)) + Math.round(sr * 2), sr);
+    const src = ctx.createBufferSource(); src.buffer = buffer;
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 38;
+    const hs = ctx.createBiquadFilter(); hs.type = "highshelf"; hs.frequency.value = 1500; hs.gain.value = 4;
+    hp.connect(hs); hs.connect(ctx.destination);
+    if (withFx) { src.playbackRate.value = rate; connectChain(src, ctx, { ...role, gain: 1, pan: 0 }, hp, null, 1); }
+    else connectChain(src, ctx, { effect: "none", gain: 1, pan: 0 }, hp, null, 1);   // gleicher Weg (Panner) wie ohne Effekt
+    src.start(0, 0, len / sr);
+    return fxLoudnessOf(await ctx.startRendering());
+  };
+  const dry = await render(false), wet = await render(true);
+  if (!(dry > 0) || !(wet > 0)) return 1;
+  return Math.max(0.05, Math.min(1, Math.sqrt(dry / wet)));
+}
+function fxTrimFor(buffer, role) {
+  if (!fxNeedsTrim(role)) return 1;
+  const m = buffer && _fxTrimCache.get(buffer);
+  const v = m && m.get(fxTrimKey(role));
+  if (typeof v === "number") return v;
+  if (buffer && !(m && m.has(fxTrimKey(role)))) prepareFxTrim(buffer, role);   // fürs nächste Mal
+  const a = role.fxAmount, amt = (a === undefined || a === null) ? 1 : Math.max(0, Math.min(1, a));
+  const db = (FX_TRIM_FALLBACK_DB[role.effect] || 0) * amt;
+  return Math.pow(10, -db / 20);
+}
+/** Misst (einmal je Aufnahme + Effekt) und merkt sich, wie weit der Effekt zurückgenommen werden muss. */
+function prepareFxTrim(buffer, role) {
+  if (!buffer || !fxNeedsTrim(role) || typeof OfflineAudioContext === "undefined") return Promise.resolve(1);
+  let m = _fxTrimCache.get(buffer);
+  if (!m) { m = new Map(); _fxTrimCache.set(buffer, m); }
+  const key = fxTrimKey(role);
+  const have = m.get(key);
+  if (typeof have === "number") return Promise.resolve(have);
+  if (have) return have;
+  const p = measureFxTrim(buffer, role)
+    .then(v => { m.set(key, v); return v; })
+    .catch(e => { console.warn("Effekt-Lautstärke messen:", e); m.delete(key); return 1; });
+  m.set(key, p);
+  return p;
+}
+async function prepareFxTrims(pairs) {
+  const list = pairs.filter(([b, r]) => b && fxNeedsTrim(r));
+  for (let i = 0; i < list.length; i += 6) await Promise.all(list.slice(i, i + 6).map(([b, r]) => prepareFxTrim(b, r)));
+}
+// Rolle einer Mix-Spur (Szenen-Rolle → Zeilen-Effekt → Spieler-Wahl) – gleich für Premiere und Export
+function mixItemBaseRole(item) {
+  let role = item.role != null ? (roleOf(item.role) || { pan: 0, effect: "none", gain: 1 }) : { pan: 0, effect: "none", gain: 1 };
+  if (scene.lines && item.lineIdx != null) role = effectiveRole(role, scene.lines[item.lineIdx]);
+  if (item.effect) role = { ...role, effect: item.effect };   // Spieler-eigene Wahl übersticht alles andere
+  if (item.fxAmount !== undefined) role = { ...role, fxAmount: item.fxAmount };
+  return role;
+}
+async function prepareMixFxTrims() {
+  try {
+    await prepareFxTrims(mixItems.filter(it => it && it.buffer && !(it.isOrig && !isOrigItemAudible(it))).map(it => [it.buffer, mixItemBaseRole(it)]));
+  } catch (e) { console.warn("Effekt-Lautstärken:", e); }
+}
+function connectChain(src, ctx, role, dest, via, trimOverride) {
+  const chain = buildChain(ctx, role, dest, trimOverride !== undefined ? trimOverride : fxTrimFor(src && src.buffer, role));
   (via || src).connect(chain);
   const lfos = chain._ssLfos;
   if (lfos && lfos.length) {
@@ -14202,7 +14312,7 @@ function connectChain(src, ctx, role, dest, via) {
   }
   return chain;
 }
-function buildChain(ctx, role, dest) {
+function buildChain(ctx, role, dest, trim) {
   const input = ctx.createGain();
   const lfos = [];
   input._ssLfos = lfos;
@@ -14221,7 +14331,10 @@ function buildChain(ctx, role, dest) {
   input.connect(fxIn);
   input.connect(dryG); dryG.connect(pan);
   fxOut.connect(wetG); wetG.connect(pan);
-  pan.connect(dest);
+  if (trim != null && trim !== 1) {
+    const trimG = ctx.createGain(); trimG.gain.value = trim;   // Effekt nie lauter als die Stimme ohne Effekt
+    pan.connect(trimG); trimG.connect(dest);
+  } else pan.connect(dest);
 
   let node = fxIn;
   const filt = (type, freq, q, gain) => {

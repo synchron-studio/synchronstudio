@@ -724,17 +724,14 @@ function expandRequests(lines, failed, summary) {
       if (typeof v === 'string') for (const x of v.matchAll(/gamebanana\.com\/mods\/(\d+)/gi)) ids.add(x[1]);
     };
     let name = '';
-    const seen = [];
     for (const url of [`${base}/Request/${rm[1]}/ProfilePage`, `${base}/Request/${rm[1]}/Submissions?_nPage=1&_nPerpage=15`, `${base}/Request/${rm[1]}/Fulfillments?_nPage=1&_nPerpage=15`]) {
-      try { const t = curl([url]).toString('utf8'); seen.push(t); const j = JSON.parse(t); name = name || j._sName || ''; walk(j); } catch (e) { seen.push(`${url}: ${String(e.message).split('\n')[0]}`); }
+      try { const j = JSON.parse(curl([url]).toString('utf8')); name = name || j._sName || ''; walk(j); } catch (e) { /* Endpunkt gibt es evtl. nicht */ }
     }
     if (!ids.size) {
       // Notfalls die Webseite selbst nach Mod-Links durchsuchen
-      try { const t = curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8'); seen.push(t); walk(t); } catch (e) { /* egal */ }
+      try { walk(curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8')); } catch (e) { /* egal */ }
     }
-    // Zur Fehlersuche: alle Links, die GameBanana zu der Anfrage geliefert hat
-    const links = [...new Set(seen.join('\n').match(/https?:\/\/[^\s"'<>\\]+/g) || [])].filter(u => !/\.(?:png|jpe?g|webp|gif|svg|css|js|woff2?)(?:\?|$)/i.test(u));
-    if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden.\n\nGefundene Links:\n${links.slice(0, 120).join('\n')}\n\nAntworten:\n${seen.map(x => x.slice(0, 2500)).join('\n----\n')}` }); continue; }
+    if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden — eine Anfrage ist nur ein Wunsch; erst wenn jemand die Szene gebaut und hochgeladen hat, gibt es etwas zum Einbauen.` }); continue; }
     summary.push(`- GameBanana-Anfrage ${rm[1]} „${name || '?'}“ → Mod ${[...ids].join(', ')}`);
     for (const id of ids) out.push(`https://gamebanana.com/mods/${id}` + (asM ? ` als ${asM[1]}` : ''));
   }
