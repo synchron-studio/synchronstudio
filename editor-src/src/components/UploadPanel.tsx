@@ -12,6 +12,9 @@ interface UploadPanelProps {
   onUploadBackingTrack: (file: File) => void;
   onUploadVocals?: (file: File) => void;
   onRemoveVocals?: () => void;
+  autoDetectLines?: boolean;
+  onToggleAutoDetectLines?: (on: boolean) => void;
+  autoDetectWaiting?: boolean;
   onUploadPackIcon: (file: File) => void;
   onUploadFillerImage: (file: File) => void;
   onRemoveVideo: () => void;
@@ -29,6 +32,9 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
   onUploadBackingTrack,
   onUploadVocals,
   onRemoveVocals,
+  autoDetectLines,
+  onToggleAutoDetectLines,
+  autoDetectWaiting,
   onUploadPackIcon,
   onUploadFillerImage,
   onRemoveVideo,
@@ -253,6 +259,24 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({
               <p className="text-zinc-300 font-medium text-[11px]">Upload Vocals-Only Track</p>
               <p className="text-[10px] text-zinc-400 font-sans">Clean voices for line export (instead of the video audio)</p>
             </div>
+          )}
+          {onToggleAutoDetectLines && (
+            <label className="flex items-start gap-2 bg-zinc-950/60 p-2 rounded border border-zinc-800 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!autoDetectLines}
+                onChange={(e) => onToggleAutoDetectLines(e.target.checked)}
+                className="mt-0.5 accent-amber-500"
+              />
+              <span className="leading-tight">
+                <span className="text-zinc-200 font-medium text-[11px]">🪄 Auto-detect lines on upload</span>
+                <span className="block text-[10px] text-zinc-400 font-sans">
+                  {autoDetectWaiting
+                    ? 'Waiting: create your first character, then the lines are added.'
+                    : 'Finds where someone speaks and creates the lines — uses the vocals track, otherwise the main video audio. Your own lines are never touched.'}
+                </span>
+              </span>
+            </label>
           )}
         </div>
       )}

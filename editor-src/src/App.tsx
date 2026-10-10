@@ -29,6 +29,7 @@ import { captureFrameAtTime, ZipExportProgress } from './utils/zipExporter';
 import { exportSynchronstudioZip, slugifySceneId } from './utils/ssExport';
 import { exportChoicerVoicerPack } from './utils/cvExport';
 import { importDraftZip } from './utils/zipImporter';
+import { detectSpeechSegments } from './utils/detectLines';
 import { 
   saveActiveProjectLocally, 
   getActiveProjectFromStorage, 
@@ -99,6 +100,17 @@ export default function App() {
   const [backingTrackMedia, setBackingTrackMedia] = useState<MediaSource | undefined>();
   // Optionale „Vocals only“-Spur: saubere Stimmen für den Ton der exportierten Zeilen
   const [vocalsMedia, setVocalsMedia] = useState<MediaSource | undefined>();
+  // Automatische Zeilenerkennung beim Hochladen (an/aus, wird gemerkt)
+  const [autoDetectLines, setAutoDetectLinesState] = useState<boolean>(() => {
+    try { return localStorage.getItem('ss-auto-detect-lines') !== 'off'; } catch { return true; }
+  });
+  const setAutoDetectLines = (on: boolean) => {
+    setAutoDetectLinesState(on);
+    try { localStorage.setItem('ss-auto-detect-lines', on ? 'on' : 'off'); } catch { /* egal */ }
+  };
+  // Welche Spur gerade vom Nutzer hochgeladen wurde und noch erkannt werden soll
+  // prev = die Spur vor dem Hochladen: erst wenn die neue fertig dekodiert ist, wird erkannt
+  const [pendingAutoDetect, setPendingAutoDetect] = useState<null | { kind: 'vocals' | 'video'; prev?: MediaSource }>(null);
   const [exportTitle, setExportTitle] = useState('Packing Scene (.zip)');
 
   // Timeline / Playback State
@@ -1060,92 +1072,74 @@ export default function App() {
     setSelectedClipId(rightClip.id);
   };
 
-  // Auto Split Silence / Audio Diff algorithm
-  const handleAutoSplitSilence = () => {
-    const videoBuffer = videoMedia?.audioBuffer;
-    const backingBuffer = backingTrackMedia?.audioBuffer;
+  // Automatisch erkannte, noch nicht bearbeitete Zeilen (dürfen bei neuer Erkennung ersetzt werden)
+  const isUntouchedAutoClip = (c: TimelineClip) =>
+    c.id.startsWith('clip_auto_') && !(c.captionDe || '').trim() &&
+    (!(c.caption || '').trim() || /^“?Auto-detected voice segment #\d+”?$/.test((c.caption || '').trim()));
 
-    if (!videoBuffer) {
-      showAlert('Please upload a Main Video first to detect voice clips.', 'Missing Video');
+  // Zeilenerkennung: mit „Vocals only“-Spur am treffsichersten, sonst Ton des Main Videos
+  // (mit Backing-Track zählt dann nur, was über der Musik liegt).
+  const runLineDetection = (auto: boolean) => {
+    const vocalsBuffer = vocalsMedia?.audioBuffer;
+    const scanBuffer = vocalsBuffer || videoMedia?.audioBuffer;
+    if (!scanBuffer) {
+      showAlert('Please upload a Main Video or a Vocals-Only track first to detect voice lines.', 'Missing Audio');
       return;
     }
+    if (auto && !clips.every(isUntouchedAutoClip)) return;   // eigene Zeilen nie automatisch anfassen
+    const backing = !vocalsBuffer ? backingTrackMedia?.audioBuffer : undefined;
+    const kept = auto ? clips.filter((c) => !isUntouchedAutoClip(c)) : clips;
+    const segments = detectSpeechSegments(scanBuffer, backing).filter(
+      (sg) => !kept.some((c) => c.startTime < sg.end && c.endTime > sg.start)
+    );
 
-    // Mit „Vocals only“-Spur dort suchen: reine Stimmen, keine Musik — viel treffsicherer
-    const vocalsBuffer = vocalsMedia?.audioBuffer;
-    const scanBuffer = vocalsBuffer || videoBuffer;
-    const videoData = scanBuffer.getChannelData(0);
-    const backingData = !vocalsBuffer && backingBuffer ? backingBuffer.getChannelData(0) : null;
-    const sampleRate = scanBuffer.sampleRate;
-    const minSpeechDuration = 0.4;
-    // Lautstärke (RMS) über ~46-ms-Fenster statt eines einzelnen Messwerts: einzelne Samples
-    // sind zufällig und zerhackten Sätze mitten im Wort. Dazu 0,25 s Nachlauf, damit kurze
-    // Atempausen keine neue Zeile beginnen.
-    const win = 2048;
-    const hangover = 0.25;
-    const rmsAt = (data: Float32Array, from: number) => {
-      let sum = 0, n = 0;
-      for (let j = from; j < from + win && j < data.length; j++) { sum += data[j] * data[j]; n++; }
-      return n ? Math.sqrt(sum / n) : 0;
-    };
-
+    const charName = characters[0]?.name || 'Voice';
+    const cleanChar = charName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const stamp = Date.now();
     const newClips: TimelineClip[] = [];
-    let isSpeaking = false;
-    let speakStart = 0;
-    let lastLoud = 0;
-    let clipCounter = clips.length + 1;
-    // Vocals-Spur: Schwelle relativ zur lautesten Stelle (leise abgemischte Spuren gehen sonst unter)
-    let vocalsPeak = 0;
-    if (vocalsBuffer) for (let i = 0; i < videoData.length; i += 64) { const a = Math.abs(videoData[i]); if (a > vocalsPeak) vocalsPeak = a; }
-    const threshold = vocalsBuffer ? Math.max(0.006, vocalsPeak * 0.06) : backingData ? 0.04 : 0.03;
-
-    const closeSegment = (endSec: number) => {
-      if (endSec - speakStart < minSpeechDuration) return;
-      // Nichts über bereits vorhandene Clips legen
-      if (clips.some((c) => c.startTime < endSec && c.endTime > speakStart)) return;
-      const charName = characters.length > 0 ? characters[(clipCounter - 1) % characters.length]?.name : 'Voice';
-      const currentAllClips = [...clips, ...newClips];
-      const autoFilename = getSmartFilenameForCharacter(charName, currentAllClips);
-      const cleanChar = charName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    segments.forEach((sg, k) => {
       newClips.push({
-        id: `clip_auto_${clipCounter}_${Date.now()}`,
-        filename: autoFilename,
-        startTime: Number(speakStart.toFixed(3)),
-        endTime: Number(endSec.toFixed(3)),
-        dubTimestamps: [Number(speakStart.toFixed(3))],
+        id: `clip_auto_${k + 1}_${stamp}`,
+        filename: getSmartFilenameForCharacter(charName, [...kept, ...newClips]),
+        startTime: sg.start,
+        endTime: sg.end,
+        dubTimestamps: [sg.start],
         dubCharacters: [charName],
-        caption: `“Auto-detected voice segment #${clipCounter}”`,
+        caption: '',
         imageFilename: `${cleanChar}.png`,
         volume: 1,
       });
-      clipCounter++;
-    };
+    });
 
-    for (let i = 0; i < videoData.length; i += win) {
-      const timeSec = i / sampleRate;
-      const v = rmsAt(videoData, i);
-      const bIdx = backingData ? Math.floor(timeSec * backingBuffer!.sampleRate) : 0;
-      const bv = backingData && bIdx < backingData.length ? rmsAt(backingData, bIdx) : 0;
-      // Mit Backing-Track: nur was über der Musik liegt, zählt als Stimme
-      const level = backingData ? Math.max(0, v - bv * 1.2) : v;
-
-      if (level > threshold) {
-        if (!isSpeaking) { isSpeaking = true; speakStart = Math.max(0, timeSec - 0.05); }
-        lastLoud = timeSec;
-      } else if (isSpeaking && timeSec - lastLoud > hangover) {
-        closeSegment(Math.min(scanBuffer.duration, lastLoud + 0.15));
-        isSpeaking = false;
-      }
-    }
-    if (isSpeaking) closeSegment(Math.min(scanBuffer.duration, lastLoud + 0.15));
-
+    const source = vocalsBuffer ? 'the vocals track' : backing ? 'the video audio (minus backing track)' : 'the video audio';
     if (newClips.length > 0) {
-      setClips((prev) => reindexClipsByCharacter([...prev, ...newClips], characters));
+      setClips(reindexClipsByCharacter([...kept, ...newClips], characters));
       setSelectedClipId(newClips[0].id);
-      showAlert(`Auto-detected ${newClips.length} new voice clips!`, 'Auto-Split Success');
-    } else {
-      showAlert('No significant voice gaps detected. Try adjusting audio levels or upload a cleaner backing track.', 'Auto-Split Notice');
+      showAlert(
+        `Found ${newClips.length} voice lines in ${source}. Now just type the texts and set the right character for each line.` +
+          (auto ? ' (You can turn automatic detection off under “Vocals Only”.)' : ''),
+        'Lines detected'
+      );
+    } else if (!auto) {
+      showAlert('No new voice lines found. Try a vocals-only track or a cleaner backing track.', 'Auto-Split Notice');
     }
   };
+  const handleAutoSplitSilence = () => runLineDetection(false);
+
+  // Nach dem Hochladen automatisch erkennen — wartet ggf., bis die erste Figur angelegt ist
+  useEffect(() => {
+    if (!pendingAutoDetect) return;
+    if (!autoDetectLines) { setPendingAutoDetect(null); return; }
+    const media = pendingAutoDetect.kind === 'vocals' ? vocalsMedia : videoMedia;
+    if (!media?.audioBuffer || media === pendingAutoDetect.prev) return;
+    if (pendingAutoDetect.kind === 'video') {
+      if (vocalsMedia?.audioBuffer) { setPendingAutoDetect(null); return; }   // Vocals sind genauer
+    }
+    if (characters.length === 0) return;
+    setPendingAutoDetect(null);
+    runLineDetection(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoDetect, autoDetectLines, vocalsMedia, videoMedia, characters]);
 
   // Preview Sliced Clip Audio
   const handlePlayClipAudio = (clip: TimelineClip) => {
@@ -1335,6 +1329,8 @@ export default function App() {
 
       const notes: string[] = [];
       if (videoFailed) notes.push('The video could not be encoded in the browser. The ZIP contains the source video and backing track in _source/ — merge them with ffmpeg before adding the scene to the game.');
+      const noText = clips.filter((c) => !(c.caption || '').trim() && !(c.captionDe || '').trim()).length;
+      if (noText) notes.push(`✏️ ${noText} line(s) have no text yet (they show as “(line N)” in the game).`);
       if (silentLines) notes.push(`⚠ ${silentLines} line(s) are almost silent at their position in the vocals track. Check with “Play Vocals Only” that the vocals match the video (same start, same length) before using this export.`);
       if (videoBytes) notes.push(`Scene video: ${mb(videoBytes)} (${videoQuality === 'original' ? 'original quality' : 'compact'}). ZIP: ${mb(zippedBlob.size)}.`);
       if (oversize) notes.push('The scene video is larger than ~20 MB (CDN limit) — it loads a bit slower in the game. Choose “Compact” for a smaller file.');
@@ -1497,10 +1493,13 @@ export default function App() {
               videoMedia={videoMedia}
               backingTrackMedia={backingTrackMedia}
               vocalsMedia={vocalsMedia}
-              onUploadVocals={handleUploadVocals}
+              onUploadVocals={(f: File) => { setPendingAutoDetect({ kind: 'vocals', prev: vocalsMedia }); handleUploadVocals(f); }}
+              autoDetectLines={autoDetectLines}
+              onToggleAutoDetectLines={setAutoDetectLines}
+              autoDetectWaiting={!!pendingAutoDetect && characters.length === 0}
               onRemoveVocals={handleRemoveVocals}
               packInfo={packInfo}
-              onUploadVideo={handleUploadVideo}
+              onUploadVideo={(f: File) => { setPendingAutoDetect({ kind: 'video', prev: videoMedia }); handleUploadVideo(f); }}
               onUploadBackingTrack={handleUploadBackingTrack}
               onUploadPackIcon={handleUploadPackIcon}
               onUploadFillerImage={handleUploadFillerImage}
@@ -1696,6 +1695,7 @@ export default function App() {
                             if (!file) return;
 
                             if (isVideo) {
+                              setPendingAutoDetect({ kind: 'video', prev: videoMedia });
                               handleUploadVideo(file);
                             } else if (isAudio) {
                               handleUploadBackingTrack(file);
