@@ -13,6 +13,11 @@ selbst herunter (auch RAR/7z, mehrteilige Archive und über 25 MB) und baut sie 
 automatisch geleert. Mehrere Packs in einem Archiv werden zu mehreren Szenen; Packs über 16 Minuten werden
 automatisch in Teile von ca. 10 Minuten geschnitten („Teil 1/4“ …), damit die Qualität gut bleibt.
 
+**Google Drive (für große Dateien):** Den Drive-Link genauso in `_import/links.txt` eintragen
+(Datei auf „Jeder mit dem Link“ freigeben). Soll das Pack eine bestehende Szene **ersetzen**, hinten
+`als <szenen-id>` anhängen, z. B. `https://drive.google.com/file/d/…/view als demon_slayer_hashira_training_drill_sane`.
+Videos in HEVC/H.265 werden automatisch in H.264 umgewandelt (fast verlustfrei), damit alle Browser sie abspielen.
+
 **Wie sehe ich, ob es geklappt hat?** Oben auf **„Actions“** klicken → Lauf **„Szenen importieren“**:
 - ✅ grüner Haken = eingebaut (in der Zusammenfassung steht, was genau)
 - ❌ rotes Kreuz = nicht eingebaut. Der Grund steht in der Zusammenfassung **und** in

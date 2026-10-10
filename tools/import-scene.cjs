@@ -100,6 +100,16 @@ function inside(base, p) {
   return r && !r.startsWith('..') && !path.isAbsolute(r);
 }
 
+/** Video-Codec der ersten Bildspur (h264, hevc, vp9 …) — leer, wenn nicht bestimmbar. */
+function probeVideoCodec(file) {
+  try {
+    const out = cp.execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim();
+    if (out) return out.split(/\s+/)[0].toLowerCase();
+  } catch { /* kein ffprobe */ }
+  try { cp.execFileSync('ffmpeg', ['-hide_banner', '-i', file], { stdio: 'pipe' }); }
+  catch (e) { const m = /Video:\s*([a-z0-9_]+)/i.exec(String(e.stderr || '')); if (m) return m[1].toLowerCase(); }
+  return '';
+}
 function probeDuration(file) {
   if (!has('ffprobe')) {
     if (!has('ffmpeg')) return null;
@@ -128,7 +138,7 @@ function makePreview(video, out, startAt) {
 }
 
 /** Prüft scene.json + Dateien, liefert die bereinigte Szene und die zu kopierenden Dateien. */
-function validate(dir) {
+function validate(dir, opts = {}) {
   const problems = [], notes = [];
   const sceneFile = path.join(dir, 'scene.json');
   if (!fs.existsSync(sceneFile)) {
@@ -137,6 +147,21 @@ function validate(dir) {
   let scene;
   try { scene = JSON.parse(fs.readFileSync(sceneFile, 'utf8')); } catch { throw new ImportError('scene.json ist kaputt (kein gültiges JSON).'); }
   if (!scene || typeof scene !== 'object' || Array.isArray(scene)) throw new ImportError('scene.json enthält keine Szene.');
+  // „als <id>“ in links.txt: diese Szene ersetzt eine bestehende (z. B. neue deutsche Fassung)
+  if (opts.forceId && scene.id !== opts.forceId) {
+    const oldId = String(scene.id || ''), nid = opts.forceId;
+    const mv = (a, b) => { if (oldId && fs.existsSync(path.join(dir, a)) && !fs.existsSync(path.join(dir, b))) { fs.mkdirSync(path.dirname(path.join(dir, b)), { recursive: true }); fs.renameSync(path.join(dir, a), path.join(dir, b)); } };
+    mv(`scenes/${oldId}.mp4`, `scenes/${nid}.mp4`);
+    mv(`scenes/${oldId}`, `scenes/${nid}`);
+    mv(`previews/${oldId}.mp4`, `previews/${nid}.mp4`);
+    const fix = (v) => typeof v === 'string' && oldId ? v.split(`scenes/${oldId}/`).join(`scenes/${nid}/`).replace(`scenes/${oldId}.mp4`, `scenes/${nid}.mp4`).replace(`previews/${oldId}.mp4`, `previews/${nid}.mp4`) : v;
+    scene.id = nid;
+    scene.videoUrl = `scenes/${nid}.mp4`;
+    if (scene.previewUrl) scene.previewUrl = fix(scene.previewUrl);
+    if (scene.avatars) for (const k of Object.keys(scene.avatars)) scene.avatars[k] = fix(scene.avatars[k]);
+    for (const l of scene.lines || []) if (l && l.orig) l.orig = fix(l.orig);
+    notes.push(`Ersetzt die Szene \`${nid}\` (Szenen-ID aus dem ZIP war \`${oldId || '—'}\`).`);
+  }
 
   const id = String(scene.id || '');
   if (!/^[a-z0-9_]{2,60}$/.test(id)) problems.push(`Szenen-ID „${id}“ ist ungültig (nur Kleinbuchstaben, Ziffern und _).`);
@@ -164,14 +189,32 @@ function validate(dir) {
   }
   if (problems.length) throw new ImportError(problems.join('\n'));
 
-  const videoBytes = fs.statSync(videoPath).size;
-  if (videoBytes > MAX_FILE_BYTES) throw new ImportError(`Das Video ist ${(videoBytes / 1048576).toFixed(0)} MB groß — GitHub nimmt höchstens ~95 MB pro Datei.`);
+  let videoPath2 = videoPath;
+  let videoBytes = fs.statSync(videoPath).size;
+  // Viele Browser (Firefox, ältere Chrome/Windows) spielen HEVC/H.265, VP9-in-MP4 usw. nicht ab →
+  // in H.264 umwandeln, Qualität so hoch, dass man praktisch keinen Unterschied sieht (CRF 18).
+  // Auch nötig, wenn die Datei für GitHub zu groß ist; dann Schritt für Schritt etwas kleiner.
+  const vcodec = probeVideoCodec(videoPath);
+  if ((vcodec && vcodec !== 'h264') || videoBytes > MAX_FILE_BYTES) {
+    if (!has('ffmpeg')) throw new ImportError(`Das Video (${vcodec || '?'}, ${(videoBytes / 1048576).toFixed(0)} MB) müsste umgewandelt werden, aber ffmpeg fehlt.`);
+    const tmpV = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-vid-'));
+    const outV = path.join(tmpV, 'scene.mp4');
+    let done = false;
+    for (const crf of [18, 20, 22, 24, 26]) {
+      ffmpegRun(['-i', videoPath, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outV], 'Das Video');
+      if (fs.statSync(outV).size <= MAX_FILE_BYTES) { done = true; notes.push(`Video von ${vcodec || 'unbekannt'} (${(videoBytes / 1048576).toFixed(0)} MB) in H.264 umgewandelt — Qualitätsstufe CRF ${crf} (${crf <= 20 ? 'praktisch kein sichtbarer Unterschied' : 'leicht komprimiert'}), jetzt ${(fs.statSync(outV).size / 1048576).toFixed(1)} MB.`); break; }
+    }
+    if (!done) throw new ImportError(`Das Video ist auch nach dem Umwandeln noch über 95 MB — bitte kürzer schneiden oder in kleinerer Auflösung exportieren.`);
+    videoPath2 = outV;
+    videoBytes = fs.statSync(outV).size;
+  }
   const lastEnd = Math.max(...lines.map(l => l.end));
-  const dur = probeDuration(videoPath);
+  const dur = probeDuration(videoPath2);
   if (dur != null && dur + 0.75 < lastEnd) throw new ImportError(`Das Video ist nur ${dur.toFixed(1)} s lang, die letzte Zeile endet aber bei ${lastEnd.toFixed(1)} s.`);
 
   // Alle Pfade in der Szene müssen im ZIP liegen — fehlende Original-Zeilen/Bilder werden weggelassen statt das Spiel zu brechen
-  const files = new Map([[video, videoPath]]);
+  const files = new Map([[video, videoPath2]]);
   const want = (p, what, drop) => {
     if (typeof p !== 'string' || !p.startsWith(`scenes/${id}/`)) { drop(); notes.push(`${what}: Pfad „${p}“ liegt nicht unter scenes/${id}/ — weggelassen.`); return; }
     const abs = path.join(dir, p);
@@ -205,7 +248,7 @@ function validate(dir) {
   let previewSrc = fs.existsSync(previewAbs) && fs.statSync(previewAbs).size < PREVIEW_MAX_BYTES ? previewAbs : null;
   if (!previewSrc) {
     const out = path.join(dir, '_preview_generated.mp4');
-    makePreview(videoPath, out, Math.max(0, (lines[0] && lines[0].t || 0) - 0.5));
+    makePreview(videoPath2, out, Math.max(0, (lines[0] && lines[0].t || 0) - 0.5));
     previewSrc = out;
     notes.push('Vorschau-Clip fehlte oder war zu groß — wurde automatisch erzeugt.');
   }
@@ -662,9 +705,33 @@ function fetchLinks(failed, summary) {
   if (!fs.existsSync(LINKS_FILE)) return [];
   const lines = fs.readFileSync(LINKS_FILE, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   const out = [];
-  for (const line of lines) {
+  for (const raw of lines) {
+    // „<link> als <szenen-id>“: die Szene im Paket ersetzt die bestehende Szene mit dieser ID
+    const asM = /\s+(?:als|as)\s+([a-z0-9_]{2,60})\s*$/i.exec(raw);
+    const forceId = asM ? asM[1].toLowerCase() : null;
+    const line = asM ? raw.slice(0, asM.index).trim() : raw;
+    // Google Drive (für große Dateien): „Jeder mit dem Link“ muss freigegeben sein
+    const dm = /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?[^#]*id=)([\w-]{20,})/i.exec(line) || /drive\.usercontent\.google\.com\/[^#]*[?&]id=([\w-]{20,})/i.exec(line);
+    if (dm) {
+      const fid = dm[1];
+      summary.push(`- Google Drive ${fid}${forceId ? ` → ersetzt \`${forceId}\`` : ''}`);
+      out.push({ name: `Google Drive ${fid}`, link: raw, totalMb: 0, forceId, prepare: () => {
+        const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dl-'));
+        const dest = path.join(dlDir, `drive_${fid}.zip`);
+        progress(`Lade Google-Drive-Datei ${fid}`);
+        try { curl(['-o', dest, `${process.env.SS_DRIVE_BASE || 'https://drive.usercontent.google.com'}/download?id=${encodeURIComponent(fid)}&export=download&confirm=t`]); }
+        catch (e) { throw new ImportError(`Download von Google Drive fehlgeschlagen — ist die Datei für „Jeder mit dem Link“ freigegeben? (${String(e.stderr || e.message).trim().split('\n').pop().slice(0, 160)})`); }
+        // Drive liefert bei fehlender Freigabe eine HTML-Seite statt der Datei
+        const head = fs.readFileSync(dest).subarray(0, 4).toString('latin1');
+        if (!head.startsWith('PK') && !head.startsWith('Rar!') && !head.startsWith('7z')) throw new ImportError('Google Drive hat keine Datei geliefert, sondern eine Webseite — bitte die Freigabe auf „Jeder mit dem Link“ stellen.');
+        const ext = head.startsWith('Rar!') ? '.rar' : head.startsWith('7z') ? '.7z' : '.zip';
+        if (ext !== '.zip') fs.renameSync(dest, dest.replace(/\.zip$/, ext));
+        return { dlDir, firsts: [dest.replace(/\.zip$/, ext)] };
+      } });
+      continue;
+    }
     const m = line.match(/gamebanana\.com\/(?:mods|dl)\/(\d+)/i);
-    if (!m) { failed.push({ name: line, msg: 'Kein GameBanana-Link erkannt (erwartet z. B. https://gamebanana.com/mods/712967).' }); continue; }
+    if (!m) { failed.push({ name: line, msg: 'Kein GameBanana- oder Google-Drive-Link erkannt (z. B. https://gamebanana.com/mods/712967 oder https://drive.google.com/file/d/…/view).' }); continue; }
     const api = (process.env.SS_GB_API || 'https://gamebanana.com/apiv11') + `/Mod/${m[1]}?_csvProperties=_sName,_aFiles,_aAlternateFileSources`;
     try {
       const info = JSON.parse(curl([api]).toString('utf8'));
@@ -679,7 +746,7 @@ function fetchLinks(failed, summary) {
       const totalMb = files.reduce((n, f) => n + (f._nFilesize || 0), 0) / 1048576;
       // Erst beim Verarbeiten laden (spart Platz: nie alle Mods gleichzeitig auf der Platte).
       // Alle Dateien eines Mods landen im selben Ordner — so findet 7z die Teile mehrteiliger Archive.
-      out.push({ name, link: line, totalMb, prepare: () => {
+      out.push({ name, link: raw, totalMb, forceId, prepare: () => {
         const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dl-'));
         for (const f of files) {
           const safe = path.basename(f._sFile).replace(/[^\w.\- ]+/g, '_');
@@ -800,7 +867,7 @@ function main() {
     imported.push({ zip, name, id: scene.id, title: scene.title, updated, lines: scene.lines.length, roles: scene.roles.length, notes, mb: videoBytes / 1048576,
       scene, oversize, rels: [...files.keys()] });
   };
-  const processArchive = (zip, name, downloaded) => {
+  const processArchive = (zip, name, downloaded, opts = {}) => {
     let ex = null;
     try {
       ex = extract(zip);
@@ -813,7 +880,7 @@ function main() {
             const results = convertChoicerPack(dir, taken);
             cleanup = results[0] && results[0].cleanup;
             for (const r of results) install(zip, packName, r);
-          } else install(zip, packName, validate(dir));
+          } else install(zip, packName, validate(dir, opts));
         } catch (e) {
           const msg = e instanceof ImportError ? e.message : ('Unerwarteter Fehler: ' + (e && e.message || e));
           failed.push({ zip, name: packName, msg, downloaded: !!downloaded, partOf: ex.dirs.length > 1 });
@@ -847,7 +914,7 @@ function main() {
     let dl = null;
     try {
       dl = job.prepare();
-      for (const f of dl.firsts) processArchive(f, dl.firsts.length > 1 ? `${job.name} (${path.basename(f)})` : job.name, dl.dlDir);
+      for (const f of dl.firsts) processArchive(f, dl.firsts.length > 1 ? `${job.name} (${path.basename(f)})` : job.name, dl.dlDir, { forceId: job.forceId });
     } catch (e) {
       const msg = e instanceof ImportError ? e.message : `Download fehlgeschlagen: ${String(e && e.message || e).split('\n')[0]}`;
       failed.push({ name: job.name, msg, downloaded: true });
