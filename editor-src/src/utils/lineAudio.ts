@@ -25,6 +25,15 @@ export interface LineAudioSources {
 const TARGET_PEAK = 0.89;   // ca. -1 dB
 const MAX_GAIN = 12;        // höchstens ~ +21 dB, sonst wird nur Rauschen laut
 
+/** Fast stille Zeile? (RMS unter ca. −50 dBFS) — dann stimmt meist die Vocals-Spur nicht zum Video. */
+export function isNearlySilent(buf: AudioBuffer): boolean {
+  let sum = 0, n = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i += 4) { sum += d[i] * d[i]; n++; } }
+  return !n || Math.sqrt(sum / n) < 0.003;
+}
+/** Wie viele Zeilen beim letzten Export fast still waren (für den Hinweis nach dem Export). */
+export const lineAudioStats = { silent: 0 };
+
 /** Mono-Mix + Spitzenpegel angleichen. */
 export function prepareLineBuffer(buf: AudioBuffer): AudioBuffer {
   const n = buf.length;
@@ -52,10 +61,18 @@ export function clipAudioFor(clip: TimelineClip, from: number, to: number, sourc
   const own = asBlob(clip.audioBlob);
   const unmoved = clip.audioStart == null || clip.audioEnd == null ||
     (Math.abs(clip.audioStart - clip.startTime) < 0.002 && Math.abs(clip.audioEnd - clip.endTime) < 0.002);
-  const slice = (media?: MediaSource) => {
+  const slice = (media?: MediaSource, allowSilent = true) => {
     if (!media?.audioBuffer) return null;
-    try { return audioBufferToWavBlob(prepareLineBuffer(sliceAudioBuffer(media.audioBuffer, from, to))); }
-    catch { return null; }
+    try {
+      const raw = sliceAudioBuffer(media.audioBuffer, from, to);
+      if (isNearlySilent(raw)) {
+        if (!allowSilent) return null;
+        lineAudioStats.silent++;
+        return audioBufferToWavBlob(raw);   // nicht hochziehen — sonst wird nur Rauschen/Knacken laut
+      }
+      return audioBufferToWavBlob(prepareLineBuffer(raw));
+    } catch { return null; }
   };
-  return slice(sources.vocals) || (own && unmoved ? own : null) || slice(sources.video) || own;
+  // Vocals zuerst; ist die Stelle dort still, lieber den passenden Clip-Ton nehmen
+  return slice(sources.vocals, !(own && unmoved)) || (own && unmoved ? own : null) || slice(sources.video) || own;
 }

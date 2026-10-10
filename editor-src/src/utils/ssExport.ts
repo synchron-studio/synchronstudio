@@ -14,7 +14,7 @@
 import JSZip from 'jszip';
 import type { FFmpeg } from '@ffmpeg/ffmpeg';
 import { Character, MediaSource, PackInfo, TimelineClip } from '../types';
-import { clipAudioFor } from './lineAudio';
+import { clipAudioFor, lineAudioStats } from './lineAudio';
 import { ZipExportProgress } from './zipExporter';
 import { cleanupFiles, clampProgress, terminateFFmpeg, tryGetFFmpeg } from './ffmpeg';
 import { asBlob, fetchBlob, toPngBlob } from './media';
@@ -254,6 +254,7 @@ export interface SynchronstudioExportResult {
   oversize: boolean;
   missingAudioLines: number;
   videoBytes?: number;
+  silentLines?: number;
 }
 
 export async function exportSynchronstudioZip(
@@ -319,6 +320,7 @@ export async function exportSynchronstudioZip(
 
   // Lines audio
   upd('Slicing voicelines…', 15);
+  lineAudioStats.silent = 0;
   const lines: Record<string, unknown>[] = [];
   for (let i = 0; i < sorted.length; i++) {
     check();
@@ -483,7 +485,7 @@ export async function exportSynchronstudioZip(
     );
     check();
     upd('Done!', 100);
-    return { archive, videoFailed, oversize, missingAudioLines, videoBytes: sceneMp4?.size };
+    return { archive, videoFailed, oversize, missingAudioLines, videoBytes: sceneMp4?.size, silentLines: lineAudioStats.silent };
   } catch (e: any) {
     if (e instanceof ExportCancelled) throw e;
     console.error('JSZip generateAsync failed', e);

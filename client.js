@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.27.1";
+const APP_VERSION = "9.27.2";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -840,6 +840,21 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.27.2", items: [
+    "🎙 Hashira Training jetzt mit deutschen Stimmen (neue Fassung von Elias, Full HD) — Original-Zeilen neu aus der Sprachspur geschnitten, englische Untertitel passend zur deutschen Fassung",
+    "🔧 Zeilen, die sich zeitlich überschnitten, enthielten das Ende einer anderen Stimme — behoben",
+    "🛠 Editor: „Cancel Export“ stoppt jetzt immer sofort (vorher hing es manchmal und lud trotzdem herunter)",
+    "🛠 Editor: Warnung, wenn Zeilen an ihrer Stelle in der Vocals-Spur fast still sind",
+    "📦 Szenen-Import: Google-Drive-Links, „als <id>“ ersetzt eine Szene, HEVC-Videos werden automatisch (fast verlustfrei) umgewandelt",
+    "⚡ Ersetzte Szenen sind sofort aktuell (CDN-Zwischenspeicher wird automatisch geleert)"
+  ], itemsEn: [
+    "🎙 Hashira Training now with German voices (new version by Elias, Full HD) — original lines re-cut from the voice track, English subtitles matching the German version",
+    "🔧 Lines that overlapped in time contained the tail of another voice — fixed",
+    "🛠 Editor: “Cancel Export” now always stops right away (it sometimes hung and still downloaded)",
+    "🛠 Editor: warning when lines are almost silent at their position in the vocals track",
+    "📦 Scene import: Google Drive links, “als <id>” replaces a scene, HEVC videos are converted automatically (near-lossless)",
+    "⚡ Replaced scenes are up to date immediately (CDN cache is cleared automatically)"
+  ]},
   { v: "9.27.1", items: [
     "🎬 Szene aktualisiert: Demon Slayer — Hashira Training"
   ], itemsEn: [

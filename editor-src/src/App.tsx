@@ -1312,7 +1312,7 @@ export default function App() {
     exportAbortControllerRef.current = controller;
 
     try {
-      const { archive: zippedBlob, videoFailed, oversize, missingAudioLines, videoBytes } = await exportSynchronstudioZip(
+      const { archive: zippedBlob, videoFailed, oversize, missingAudioLines, videoBytes, silentLines } = await exportSynchronstudioZip(
         packInfo,
         characters,
         clips,
@@ -1335,6 +1335,7 @@ export default function App() {
 
       const notes: string[] = [];
       if (videoFailed) notes.push('The video could not be encoded in the browser. The ZIP contains the source video and backing track in _source/ — merge them with ffmpeg before adding the scene to the game.');
+      if (silentLines) notes.push(`⚠ ${silentLines} line(s) are almost silent at their position in the vocals track. Check with “Play Vocals Only” that the vocals match the video (same start, same length) before using this export.`);
       if (videoBytes) notes.push(`Scene video: ${mb(videoBytes)} (${videoQuality === 'original' ? 'original quality' : 'compact'}). ZIP: ${mb(zippedBlob.size)}.`);
       if (oversize) notes.push('The scene video is larger than ~20 MB (CDN limit) — it loads a bit slower in the game. Choose “Compact” for a smaller file.');
       if (missingAudioLines) notes.push(`${missingAudioLines} line(s) have no original audio (no video audio could be decoded for them).`);
