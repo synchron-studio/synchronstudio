@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.27.0";
+const APP_VERSION = "9.27.1";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -67,6 +67,7 @@ const OVERSIZE_MP4 = new Set([
   "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil3.mp4", // 71.9 MB (automatisch importiert)
   "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil4.mp4", // 62.0 MB (automatisch importiert)
   "scenes/giyu_and_tanjiro_vs_akaza_full_fight_44_teil5.mp4", // 56.6 MB (automatisch importiert)
+  "scenes/demon_slayer_hashira_training_drill_sane.mp4", // 51.0 MB (automatisch importiert)
 ]);
 function useCdnAssets() {
   try { return /\.github\.io$/i.test(location.hostname); } catch { return false; }
@@ -839,6 +840,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.27.1", items: [
+    "🎬 Szene aktualisiert: Demon Slayer — Hashira Training"
+  ], itemsEn: [
+    "🎬 Scene updated: Demon Slayer — Hashira Training"
+  ]},
   { v: "9.27.0", items: [
     "🏆 Finale komplett neu inszeniert: Lichtkegel & Dunst, Säulen fahren hoch, Punkte zählen hoch, Medaillen & Leuchtringe, Krone fällt auf den Sieger, Blitz, Konfetti-Kanonen mit echter Physik und Feuerwerk",
     "🎵 Premiere: Die Musik (Backing-Track) wird automatisch leiser, solange jemand spricht — und danach weich wieder lauter. Auch im gespeicherten Ton",
