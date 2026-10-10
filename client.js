@@ -8412,8 +8412,11 @@ if ($("pack-file")) $("pack-file").onchange = (e) => {
 // ═════════════════════════════════════════════════════════════
 let myLines = [], curLine = 0, takes = {};   // takes: lineIdx → ArrayBuffer
 let outtakes = [];   // verworfene Takes fürs Outtakes-Reel [{lineIdx,text,t,end,buf,name,uid}]
-const OUTTAKE_MAX = 8;          // pro Spieler in der Booth
-const OUTTAKE_POOL_MAX = 24;    // gemischter Pool für die Premiere (alle zusammen)
+// Früher 8 pro Spieler (ältere flogen raus) und 24 insgesamt — wer eine Line fünfmal neu
+// aufnahm, fand seine Versprecher danach oft gar nicht mehr. Opus-Clips sind klein (~50 KB),
+// deshalb großzügig: praktisch alles bleibt.
+const OUTTAKE_MAX = 40;         // pro Spieler in der Booth
+const OUTTAKE_POOL_MAX = 100;   // gemischter Pool für die Premiere (alle zusammen)
 const OUTTAKE_MIN_BYTES = 400;  // leere/zu kurze Clips nicht behalten
 let collectedOuttakes = new Map(); // host: peerId -> outtake[]
 let outtakeUidSeq = 0;
@@ -8424,6 +8427,29 @@ function outtakeKey(o) {
   if (o && o.uid != null) return String(o.name || "?") + "|" + String(o.lineIdx) + "|u:" + o.uid;
   const len = o && o.buf ? (o.buf.byteLength || 0) : 0;
   return String(o.name || "?") + "|" + String(o.lineIdx) + "|b:" + len;
+}
+/**
+ * Pool auf die Höchstzahl kürzen, aber gerecht: abwechselnd je Spieler einer, damit nie ein
+ * ganzer Spieler (z. B. der zuletzt abgebende) komplett herausfällt.
+ */
+function fairTrimOuttakes(list, max) {
+  if (list.length <= max) return list;
+  const byName = new Map();
+  for (const o of list) {
+    const k = String(o.name || "?");
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(o);
+  }
+  const queues = [...byName.values()];
+  const picked = new Set();
+  for (let round = 0; picked.size < max; round++) {
+    let any = false;
+    for (const q of queues) {
+      if (round < q.length && picked.size < max) { picked.add(q[round]); any = true; }
+    }
+    if (!any) break;
+  }
+  return list.filter(o => picked.has(o));   // ursprüngliche Reihenfolge behalten
 }
 /** Doppelte Einträge (gleicher uid / gleiche Größe) raus — verschiedene Bloopers bleiben. */
 function dedupeOuttakes(list) {
@@ -9497,7 +9523,7 @@ function ingestOuttakesFromPlayer(fromId, playerName, ots) {
       buf
     };
   }).filter(o => outtakeBufOk(o.buf));
-  outtakes = dedupeOuttakes(keep.concat(incoming)).slice(0, OUTTAKE_POOL_MAX);
+  outtakes = fairTrimOuttakes(dedupeOuttakes(keep.concat(incoming)), OUTTAKE_POOL_MAX);
   outtakesCache = null;
   resolveOuttakesCachePending(null);
   updateOuttakesBtn();
@@ -12354,7 +12380,7 @@ function publishOuttakesPool() {
     const tmp = unique[i]; unique[i] = unique[j]; unique[j] = tmp;
   }
   // Kopien der Audio-Buffer — Broadcast darf lokale Outtakes nicht detach'en
-  outtakes = unique.slice(0, OUTTAKE_POOL_MAX).map(o => {
+  outtakes = fairTrimOuttakes(unique, OUTTAKE_POOL_MAX).map(o => {
     let buf = o.buf;
     try {
       if (buf instanceof ArrayBuffer) buf = buf.slice(0);
