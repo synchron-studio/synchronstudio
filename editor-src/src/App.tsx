@@ -1,4 +1,4 @@
-import { prefetchFFmpeg } from './utils/ffmpeg';
+import { prefetchFFmpeg, terminateFFmpeg } from './utils/ffmpeg';
 import type { VideoQuality } from './utils/ssExport';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
@@ -1273,6 +1273,9 @@ export default function App() {
     if (exportAbortControllerRef.current) {
       exportAbortControllerRef.current.abort();
     }
+    // Video-Engine sofort hart beenden — egal in welcher Phase der Export gerade steckt.
+    // Vorher lief sie z. B. beim Datei-Übergeben weiter und der Rechner blieb ausgelastet.
+    terminateFFmpeg();
     setIsExporting(false);
     setExportProgress(null);
   };
@@ -1325,6 +1328,8 @@ export default function App() {
       const cleanTitle = slugifySceneId(packInfo.sceneId || packInfo.title || 'scene');
       const downloadFilename = `${cleanTitle}_synchronstudio.zip`;
 
+      // Kurz vor Schluss abgebrochen? Dann auch nichts mehr herunterladen
+      if (controller.signal.aborted) return;
       // Adresse nicht sofort freigeben — sonst startet der Download in Firefox/Safari nicht
       downloadBlob(zippedBlob, downloadFilename);
 
@@ -1353,9 +1358,12 @@ export default function App() {
         );
       }
     } finally {
-      setIsExporting(false);
-      setExportProgress(null);
-      exportAbortControllerRef.current = null;
+      // Nur aufräumen, wenn kein neuerer Export inzwischen läuft
+      if (exportAbortControllerRef.current === controller) {
+        setIsExporting(false);
+        setExportProgress(null);
+        exportAbortControllerRef.current = null;
+      }
     }
   };
 
@@ -1379,6 +1387,7 @@ export default function App() {
         controller.signal
       );
       const cleanTitle = slugifySceneId(packInfo.sceneId || packInfo.title || 'scene');
+      if (controller.signal.aborted) return;
       downloadBlob(archive, `${cleanTitle}_choicervoicer.zip`);
 
       const notes: string[] = [];
@@ -1401,9 +1410,12 @@ export default function App() {
         showAlert(detail ? `Export failed: ${detail}` : 'Failed to generate the modpack. Please try again.', 'Export Error');
       }
     } finally {
-      setIsExporting(false);
-      setExportProgress(null);
-      exportAbortControllerRef.current = null;
+      // Nur aufräumen, wenn kein neuerer Export inzwischen läuft
+      if (exportAbortControllerRef.current === controller) {
+        setIsExporting(false);
+        setExportProgress(null);
+        exportAbortControllerRef.current = null;
+      }
     }
   };
 
