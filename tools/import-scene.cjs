@@ -703,9 +703,43 @@ function curl(args) {
   // Große Teile (mehrere 100 MB) brauchen Zeit — bis zu 1 h pro Datei, bei Abbruch dort weitermachen
   return cp.execFileSync('curl', ['-fsSL', '--retry', '5', '--retry-delay', '10', '--retry-all-errors', '-C', '-', '-m', '3600', '-A', 'Mozilla/5.0 (Synchronstudio-Import)', ...args], { maxBuffer: 1 << 26 });
 }
+/**
+ * GameBanana-„Requests“ (gamebanana.com/requests/…) sind Anfragen — die eigentliche Szene ist der Mod,
+ * der die Anfrage erfüllt. Diese Mods heraussuchen und wie normale Mod-Links behandeln.
+ */
+function expandRequests(lines, failed, summary) {
+  const out = [];
+  for (const raw of lines) {
+    const rm = /gamebanana\.com\/requests\/(\d+)/i.exec(raw);
+    if (!rm) { out.push(raw); continue; }
+    const asM = /\s+(?:als|as)\s+([a-z0-9_]{2,60})\s*$/i.exec(raw);
+    const base = process.env.SS_GB_API || 'https://gamebanana.com/apiv11';
+    const ids = new Set();
+    const walk = (v) => {
+      if (Array.isArray(v)) return v.forEach(walk);
+      if (v && typeof v === 'object') {
+        if (v._sModelName === 'Mod' && v._idRow) ids.add(String(v._idRow));
+        return Object.values(v).forEach(walk);
+      }
+      if (typeof v === 'string') for (const x of v.matchAll(/gamebanana\.com\/mods\/(\d+)/gi)) ids.add(x[1]);
+    };
+    let name = '';
+    for (const url of [`${base}/Request/${rm[1]}/ProfilePage`, `${base}/Request/${rm[1]}/Submissions?_nPage=1&_nPerpage=15`, `${base}/Request/${rm[1]}/Fulfillments?_nPage=1&_nPerpage=15`]) {
+      try { const j = JSON.parse(curl([url]).toString('utf8')); name = name || j._sName || ''; walk(j); } catch (e) { /* Endpunkt gibt es evtl. nicht */ }
+    }
+    if (!ids.size) {
+      // Notfalls die Webseite selbst nach Mod-Links durchsuchen
+      try { walk(curl([`https://gamebanana.com/requests/${rm[1]}`]).toString('utf8')); } catch (e) { /* egal */ }
+    }
+    if (!ids.size) { failed.push({ name: `GameBanana-Anfrage ${rm[1]}`, msg: `Zur Anfrage „${name || rm[1]}“ wurde (noch) kein fertiger Mod mit Download gefunden.` }); continue; }
+    summary.push(`- GameBanana-Anfrage ${rm[1]} „${name || '?'}“ → Mod ${[...ids].join(', ')}`);
+    for (const id of ids) out.push(`https://gamebanana.com/mods/${id}` + (asM ? ` als ${asM[1]}` : ''));
+  }
+  return out;
+}
 function fetchLinks(failed, summary) {
   if (!fs.existsSync(LINKS_FILE)) return [];
-  const lines = fs.readFileSync(LINKS_FILE, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const lines = expandRequests(fs.readFileSync(LINKS_FILE, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')), failed, summary);
   const out = [];
   for (const raw of lines) {
     // „<link> als <szenen-id>“: die Szene im Paket ersetzt die bestehende Szene mit dieser ID
