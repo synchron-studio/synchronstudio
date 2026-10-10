@@ -653,6 +653,7 @@ function autoTranslate(lines, notes) {
 // _import/links.txt: GameBanana-Links (eine pro Zeile) → Dateien herunterladen und wie hochgeladene
 // Archive behandeln. Heruntergeladenes wird nie gespeichert (kann > 100 MB sein) — nur das Ergebnis.
 const LINKS_FILE = path.join(IMPORT_DIR, 'links.txt');
+let linksConsumed = false;
 function curl(args) {
   // Große Teile (mehrere 100 MB) brauchen Zeit — bis zu 1 h pro Datei, bei Abbruch dort weitermachen
   return cp.execFileSync('curl', ['-fsSL', '--retry', '5', '--retry-delay', '10', '--retry-all-errors', '-C', '-', '-m', '3600', '-A', 'Mozilla/5.0 (Synchronstudio-Import)', ...args], { maxBuffer: 1 << 26 });
@@ -697,6 +698,7 @@ function fetchLinks(failed, summary) {
   }
   // Liste leeren — sonst würde jeder Lauf dieselben Packs nochmal holen
   fs.rmSync(LINKS_FILE, { force: true });
+  linksConsumed = true;
   // Kleine Mods zuerst: die sind schnell drin, das 44-Minuten-Monster kommt zuletzt
   return out.sort((x, y) => x.totalMb - y.totalMb);
 }
@@ -724,12 +726,40 @@ function commitNow(batch) {
     fs.rmSync(LINKS_FILE, { force: true });
     throw new ImportError('Nach dem Einbauen schlug der Spiel-Test fehl — die Szene wurde wieder entfernt.');
   }
-  run('git', ['-c', 'user.name=Szenen-Import', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+  const commit = () => run('git', ['-c', 'user.name=Szenen-Import', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
     'commit', '-q', '-m', `Szenen-Import: ${batch.map(x => x.id).join(', ')}`]);
+  commit();
   let pushed = false;
   for (let i = 0; i < 3 && !pushed; i++) {
     try { run('git', ['pull', '-q', '--rebase', 'origin', 'main']); run('git', ['push', '-q', 'origin', 'HEAD:main']); pushed = true; }
-    catch { cp.execFileSync('sleep', ['5']); }
+    catch {
+      // Meist: jemand hat inzwischen scenes.json/client.js geändert (anderer Import, Hand-Änderung).
+      // Dann nicht zusammenflicken, sondern die Szenen auf dem neuesten Stand frisch eintragen.
+      try { run('git', ['rebase', '--abort']); } catch { /* war kein Rebase offen */ }
+      const keep = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-keep-'));
+      for (const x of batch) for (const r of x.rels || []) {
+        const src = path.join(ROOT, r);
+        if (fs.existsSync(src)) { fs.mkdirSync(path.dirname(path.join(keep, r)), { recursive: true }); fs.copyFileSync(src, path.join(keep, r)); }
+      }
+      run('git', ['fetch', '-q', 'origin', 'main']);
+      run('git', ['reset', '-q', '--hard', 'origin/main']);
+      if (linksConsumed) fs.rmSync(LINKS_FILE, { force: true });
+      for (const x of batch) {
+        for (const r of x.rels || []) {
+          const src = path.join(keep, r);
+          if (fs.existsSync(src)) { fs.mkdirSync(path.dirname(path.join(ROOT, r)), { recursive: true }); fs.copyFileSync(src, path.join(ROOT, r)); }
+        }
+        upsertScene(x.scene);
+        updateClientJs(x.scene, x.oversize);
+      }
+      fs.rmSync(keep, { recursive: true, force: true });
+      cp.execFileSync(process.execPath, [path.join(ROOT, 'tools', 'sync-scene-index.cjs')], { cwd: ROOT, stdio: 'inherit' });
+      bumpVersion(batch);
+      run('git', ['add', '-A']);
+      run('npm', ['test', '--silent']);
+      commit();
+      cp.execFileSync('sleep', ['3']);
+    }
   }
   if (!pushed) throw new Error('Speichern auf GitHub (git push) fehlgeschlagen');
   try { run('gh', ['workflow', 'run', 'deploy-pages.yml', '--ref', 'main']); } catch { /* Website kommt spätestens am Ende */ }
@@ -767,7 +797,8 @@ function main() {
     const updated = upsertScene(scene);
     updateClientJs(scene, oversize);
     if (oversize) notes.push(`Video ist ${(videoBytes / 1048576).toFixed(1)} MB (über 20 MB) — wird über GitHub statt über das CDN geladen, lädt also etwas langsamer.`);
-    imported.push({ zip, name, id: scene.id, title: scene.title, updated, lines: scene.lines.length, roles: scene.roles.length, notes, mb: videoBytes / 1048576 });
+    imported.push({ zip, name, id: scene.id, title: scene.title, updated, lines: scene.lines.length, roles: scene.roles.length, notes, mb: videoBytes / 1048576,
+      scene, oversize, rels: [...files.keys()] });
   };
   const processArchive = (zip, name, downloaded) => {
     let ex = null;
