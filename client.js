@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.2";
+const APP_VERSION = "9.29.3";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.3", items: [
+    "🎬 Neue Szene: Maki vs Naoya Zenin"
+  ], itemsEn: [
+    "🎬 New scene: Maki vs Naoya Zenin"
+  ]},
   { v: "9.29.2", items: [
     "🎬 Neue Szene: LAUGH, Jabber & Zankas aftermath — Gachiakuta"
   ], itemsEn: [
@@ -2397,6 +2402,9 @@ const AVATAR_CHARS = [
   { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/jabber.png", label: "Jabber · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
   { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/backing_vocals_for_jabber.png", label: "Backing vocals for Jabber · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
   { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/zanka.png", label: "Zanka · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
+  { img: "scenes/maki_vs_naoya_zenin/naoya_zenin.png", label: "Naoya Zenin · Maki vs Naoya Zenin" },
+  { img: "scenes/maki_vs_naoya_zenin/maki.png", label: "Maki · Maki vs Naoya Zenin" },
+  { img: "scenes/maki_vs_naoya_zenin/narrator.png", label: "Narrator · Maki vs Naoya Zenin" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
