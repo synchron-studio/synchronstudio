@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.3";
+const APP_VERSION = "9.29.4";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.4", items: [
+    "🎬 Neue Szene: This is private property"
+  ], itemsEn: [
+    "🎬 New scene: This is private property"
+  ]},
   { v: "9.29.3", items: [
     "🎬 Neue Szene: Maki vs Naoya Zenin"
   ], itemsEn: [
@@ -2405,6 +2410,8 @@ const AVATAR_CHARS = [
   { img: "scenes/maki_vs_naoya_zenin/naoya_zenin.png", label: "Naoya Zenin · Maki vs Naoya Zenin" },
   { img: "scenes/maki_vs_naoya_zenin/maki.png", label: "Maki · Maki vs Naoya Zenin" },
   { img: "scenes/maki_vs_naoya_zenin/narrator.png", label: "Narrator · Maki vs Naoya Zenin" },
+  { img: "scenes/this_is_private_property/old_man.png", label: "Old Man · This is private property" },
+  { img: "scenes/this_is_private_property/hubert.png", label: "Hubert · This is private property" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
