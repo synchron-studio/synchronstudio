@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.4";
+const APP_VERSION = "9.29.5";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.5", items: [
+    "🎬 Neue Szene: Goku Vs Beerus on King Kais Planet"
+  ], itemsEn: [
+    "🎬 New scene: Goku Vs Beerus on King Kais Planet"
+  ]},
   { v: "9.29.4", items: [
     "🎬 Neue Szene: This is private property"
   ], itemsEn: [
@@ -2412,6 +2417,10 @@ const AVATAR_CHARS = [
   { img: "scenes/maki_vs_naoya_zenin/narrator.png", label: "Narrator · Maki vs Naoya Zenin" },
   { img: "scenes/this_is_private_property/old_man.png", label: "Old Man · This is private property" },
   { img: "scenes/this_is_private_property/hubert.png", label: "Hubert · This is private property" },
+  { img: "scenes/goku_vs_beerus_on_king_kais_planet/king_kai.png", label: "King Kai · Goku Vs Beerus on King Kais Planet" },
+  { img: "scenes/goku_vs_beerus_on_king_kais_planet/beerus.png", label: "Beerus · Goku Vs Beerus on King Kais Planet" },
+  { img: "scenes/goku_vs_beerus_on_king_kais_planet/goku.png", label: "Goku · Goku Vs Beerus on King Kais Planet" },
+  { img: "scenes/goku_vs_beerus_on_king_kais_planet/whis.png", label: "Whis · Goku Vs Beerus on King Kais Planet" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
