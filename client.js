@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.1";
+const APP_VERSION = "9.29.2";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.2", items: [
+    "🎬 Neue Szene: LAUGH, Jabber & Zankas aftermath — Gachiakuta"
+  ], itemsEn: [
+    "🎬 New scene: LAUGH, Jabber & Zankas aftermath — Gachiakuta"
+  ]},
   { v: "9.29.1", items: [
     "🎬 Neue Szene: big bang drive"
   ], itemsEn: [
@@ -2389,6 +2394,9 @@ const AVATAR_CHARS = [
   { img: "scenes/big_bang_drive/igaguri.png", label: "igaguri · big bang drive" },
   { img: "scenes/big_bang_drive/nanasae.png", label: "nanasae · big bang drive" },
   { img: "scenes/big_bang_drive/ego.png", label: "ego · big bang drive" },
+  { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/jabber.png", label: "Jabber · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
+  { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/backing_vocals_for_jabber.png", label: "Backing vocals for Jabber · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
+  { img: "scenes/laugh_jabber_zankas_aftermath_gachiakuta/zanka.png", label: "Zanka · LAUGH, Jabber & Zankas aftermath — Gachiakuta" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
