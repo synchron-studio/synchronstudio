@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.0";
+const APP_VERSION = "9.29.1";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,11 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.29.1", items: [
+    "🎬 Neue Szene: big bang drive"
+  ], itemsEn: [
+    "🎬 New scene: big bang drive"
+  ]},
   { v: "9.29.0", items: [
     "🎬 Outtakes: jetzt bleiben alle Versprecher drin — vorher nur die letzten 8 pro Spieler und höchstens 24 insgesamt (mehrfach neu aufgenommene Lines fehlten oft komplett)",
     "🪄 Editor: automatische Zeilenerkennung — Vocals (oder Video) hochladen, die Lines werden selbst angelegt; nur noch Text & Figur eintragen. Unter „Vocals Only“ an/aus",
@@ -2376,6 +2381,14 @@ const AVATAR_CHARS = [
   { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/demon_slayer_boy_1.png", label: "Demon Slayer Boy 1 · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
   { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/demon_slayer_boy_2.png", label: "Demon Slayer Boy 2 · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
   { img: "scenes/zenitsu_vs_kaigaku_the_entire_fight_afte/yushiro.png", label: "Yushiro · Zenitsu VS Kaigaku The ENTIRE Fight + Aftermath — Teil 2/2" },
+  { img: "scenes/big_bang_drive/shidou.png", label: "Shidou · big bang drive" },
+  { img: "scenes/big_bang_drive/reo.png", label: "reo · big bang drive" },
+  { img: "scenes/big_bang_drive/gagamaru.png", label: "gagamaru · big bang drive" },
+  { img: "scenes/big_bang_drive/isagi.png", label: "isagi · big bang drive" },
+  { img: "scenes/big_bang_drive/raichi.png", label: "raichi · big bang drive" },
+  { img: "scenes/big_bang_drive/igaguri.png", label: "igaguri · big bang drive" },
+  { img: "scenes/big_bang_drive/nanasae.png", label: "nanasae · big bang drive" },
+  { img: "scenes/big_bang_drive/ego.png", label: "ego · big bang drive" },
 ];
 // ── Schwebende Hintergrund-Punkte: Mix aus Farbverlauf-Kreisen und ganz dezenten Charakterbildern aus unseren Szenen ──
 (function buildFloaties() {
