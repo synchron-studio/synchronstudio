@@ -154,6 +154,15 @@ export function saveActiveProjectLocally(
     }
   }
   if (!saved) console.warn('Could not save project to localStorage (storage full).');
+  // Projekte, die aus der Liste gefallen sind, auch ihre Videos/Tonspuren im Browser-Speicher
+  // löschen — sonst wuchs der Speicher mit jedem Projekt um bis zu 100 MB und lief irgendwann voll.
+  if (saved) {
+    try {
+      const kept = new Set(getSavedProjectsList().map((p) => p.id));
+      kept.add(project.id);
+      for (const p of existingList) if (!kept.has(p.id)) deleteMediaFilesFromStorage(p.id).catch(() => {});
+    } catch { /* egal */ }
+  }
 
   return project;
 }

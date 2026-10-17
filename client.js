@@ -5,7 +5,7 @@
    Modus B: Realtime (eigene Videos ohne Timings)
    ═══════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = "9.29.5";
+const APP_VERSION = "9.30.0";
 
 // Letzte Fehler & Warnungen für „🐞 Problem melden“ mitschreiben — bleibt nur im Speicher
 // dieses Browsers, verschickt wird nichts automatisch.
@@ -851,6 +851,23 @@ document.body.insertAdjacentHTML("beforeend",
    </div>`);
 
 const PATCH_NOTES = [
+  { v: "9.30.0", items: [
+    "🔍 Großer Projekt-Check: jede Zeile Code durchgesehen, alles automatisch geprüft (Buttons, Übersetzungen, alle 148 Szenen und ihre Dateien)",
+    "🔁 Wer zwei Rollen spricht, kann jetzt auch die Lines der zweiten Rolle nach dem Abgeben neu aufnehmen (vorher nur die der ersten)",
+    "🎚 Premiere: Host kann die Lautstärke jeder gesprochenen Rolle einzeln regeln — auch Zusatzrollen",
+    "✏️ Editor-Export: wer nur den deutschen Text einträgt, bekommt keine „(line 01)“-Platzhalter mehr im Spiel — Englisch wird beim Import automatisch übersetzt",
+    "💾 Editor: alte Projekte räumen ihre Videos im Browser-Speicher auf (der Speicher lief sonst irgendwann voll)",
+    "🛡 Mini-Spiele: Ergebnisse von Mitspielern werden geprüft (keine kaputten Anzeigen mehr möglich); Raum verlassen vergisst alte Abgaben sauber",
+    "🧹 6,6 MB ungenutzte Dateien entfernt",
+  ], itemsEn: [
+    "🔍 Big project check: every line of code reviewed, everything auto-checked (buttons, translations, all 148 scenes and their files)",
+    "🔁 Speaking two roles? You can now re-record lines of your second role after submitting too (before only the first)",
+    "🎚 Premiere: the host can set the volume of every spoken role — including extra roles",
+    "✏️ Editor export: if you only fill in the German text, the game no longer shows “(line 01)” placeholders — English is auto-translated on import",
+    "💾 Editor: old projects clean up their videos in browser storage (it used to fill up eventually)",
+    "🛡 Minigames: results from other players are validated; leaving a room cleanly forgets old submissions",
+    "🧹 Removed 6.6 MB of unused files",
+  ] },
   { v: "9.29.5", items: [
     "🎬 Neue Szene: Goku Vs Beerus on King Kais Planet"
   ], itemsEn: [
@@ -4529,6 +4546,7 @@ function leaveRoom(statusMsg) {
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
   localVideoBuf = null; clearSceneVideoState();
   takes = {}; myLines = []; curLine = 0; outtakes = []; mixItems = []; collected.clear(); collectedOuttakes.clear();
+  meineAbgaben = [];   // sonst würden Takes aus diesem Raum beim nächsten Raum nachgereicht
   ttt = { p: [], board: Array(9).fill(null), turn: 0, winner: null };
   match = { mode: "free", rounds: 3, round: 1, totals: {}, autoRoulette: true, buddyGivers: {} };
   myBuddyUsed = false;
@@ -9898,6 +9916,8 @@ function cbRun() {
 }
 const cbScores = new Map();
 function cbScore(pid, n) {
+  // Wert kommt vom Gast — nur echte Zahlen annehmen (landet später in der Ergebnisliste)
+  n = Math.max(0, Math.min(500, Math.floor(Number(n)) || 0));
   cbScores.set(pid, n);
   clearTimeout(cbScore._t);
   cbScore._t = setTimeout(() => {
@@ -9929,7 +9949,7 @@ const RPS_BEATS = { rock: "scissors", paper: "rock", scissors: "paper" };
 function rpsAction(a) { if (isHost) rpsHandle(a, myId); else sendHost({ t: "rps", a }); }
 function rpsHandle(a, pid) {
   if (a.k === "join" && rps.p.length < 2 && !rps.p.includes(pid)) { rps.p.push(pid); rps.wins[pid] = 0; }
-  if (a.k === "pick" && rps.p.includes(pid) && rps.p.length === 2 && !rps.lastResult) {
+  if (a.k === "pick" && RPS_ICON[a.choice] && rps.p.includes(pid) && rps.p.length === 2 && !rps.lastResult) {
     rps.picks[pid] = a.choice;
     if (Object.keys(rps.picks).length === 2) {
       const [a1, a2] = rps.p, c1 = rps.picks[a1], c2 = rps.picks[a2];
@@ -11710,6 +11730,9 @@ function tpRun(phrase) {
 
 // — Auswertung (Host sammelt, kleinste Zeit gewinnt) —
 function mgScore(game, pid, ms) {
+  if (game !== "rx" && game !== "tp") return;
+  ms = Number(ms);
+  ms = Number.isFinite(ms) ? Math.max(0, Math.min(9999, Math.round(ms))) : 9999;
   const map = game === "rx" ? rxScores : tpScores;
   map.set(pid, ms);
   clearTimeout(mgScore["_t" + game]);
@@ -11743,11 +11766,12 @@ function redoLine(lineIdx, fromScreen) {
   curLine = idxInMyLines;
   const bv = $("booth-video");
   bv.src = sceneVideoSrc();
-  const rid = myRole();
+  const rid = roleOfLine(scene.lines[lineIdx]) ?? myRole();   // Rolle DIESER Line (bei Mehrfachrollen)
   const av = scene.avatars?.[String(rid)];
   $("booth-avatar").style.display = av ? "" : "none";
   if (av) $("booth-avatar").src = assetUrl(av);
-  $("booth-rolename").textContent = roleOf(rid).name + tt(" (fix)", " (Korrektur)");
+  const lineRole = roleOf(rid) || { name: "?" };
+  $("booth-rolename").textContent = lineRole.name + tt(" (fix)", " (Korrektur)");
   setBar("booth-bar", 30);
   $("btn-line-rec").disabled = true;
   prepareBoothVideo();
@@ -11801,9 +11825,10 @@ function renderRedoPanel(containerId) {
   const el = $(containerId);
   if (!el) return;
   if (premiereLocked || !scene || !scene.lines) { el.innerHTML = ""; return; }
-  const rid = myRole();
-  if (rid == null) { el.innerHTML = ""; return; }   // Zuschauer haben nichts zu korrigieren
-  const mine = scene.lines.map((l, i) => ({ ...l, idx: i })).filter(l => l.chars.includes(rid));
+  const meine = myRoles();
+  if (!meine.length) { el.innerHTML = ""; return; }   // Zuschauer haben nichts zu korrigieren
+  // Alle eigenen Rollen — wer zwei Rollen sprach, konnte vorher nur die Lines der ersten neu aufnehmen
+  const mine = scene.lines.map((l, i) => ({ ...l, idx: i })).filter(l => l.chars.some(c => meine.includes(c)));
   if (!mine.length) { el.innerHTML = ""; return; }
   const fromScreen = containerId === "redo-panel-wait" ? "scr-wait" : "scr-playback";
   el.innerHTML = `<div class="tag" style="margin:10px 0 6px">${esc(tt("🔁 Not happy with one of your lines?", "🔁 Eine deiner Lines noch nicht zufrieden?"))}</div>` +
@@ -13276,10 +13301,12 @@ function renderPremPlayerVolPanel() {
     return;
   }
   const roles = rolesInPremMix();
-  const rows = players.filter(p => {
-    const k = roleKey(p.role);
-    return k != null && roles.has(k);
-  });
+  // Eine Zeile pro gesprochener Rolle (auch Zusatzrollen — vorher nur die Hauptrolle regelbar)
+  const rows = [];
+  for (const p of players) {
+    const eigene = rolesOfPlayer(p).map(roleKey).filter(k => k != null && roles.has(k));
+    for (const k of eigene) rows.push({ p, k, mehrere: eigene.length > 1 });
+  }
   if (!rows.length) {
     panel.style.display = "none";
     list.innerHTML = "";
@@ -13288,8 +13315,7 @@ function renderPremPlayerVolPanel() {
   }
   panel.style.display = "";
   list.innerHTML = "";
-  for (const p of rows) {
-    const k = roleKey(p.role);
+  for (const { p, k, mehrere } of rows) {
     const g = playerGainFor(k);
     const pct = Math.round(g * 100);
     const row = document.createElement("div");
@@ -13301,7 +13327,7 @@ function renderPremPlayerVolPanel() {
     if (avNode) row.appendChild(avNode);
     const name = document.createElement("span");
     name.className = "ppv-name";
-    name.textContent = stripHostTag(p.name || "?");
+    name.textContent = stripHostTag(p.name || "?") + (mehrere ? " · " + ((roleOf(+k) || {}).name || k) : "");
     name.title = name.textContent;
     const minus = document.createElement("button");
     minus.type = "button";

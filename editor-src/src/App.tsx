@@ -409,6 +409,7 @@ export default function App() {
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target.isContentEditable
       ) {
         return; // Don't trigger shortcuts when typing in inputs

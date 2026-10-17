@@ -332,8 +332,11 @@ export async function exportSynchronstudioZip(
     // Anfang der Stimme abgeschnitten (z. B. „Ta-“ von „Tanjiro“ fehlte im Original-Ton).
     const t = +Math.max(0, Math.min(clip.startTime, clip.dubTimestamps?.[0] ?? clip.startTime)).toFixed(3);
     const end = +Math.max(t + 0.2, clip.endTime).toFixed(3);
-    const text = (clip.caption || '').replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim() || `(line ${n})`;
-    const de = (clip.captionDe || text).replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim();
+    // Nur Deutsch eingetragen? Dann den deutschen Text auch als „text“ nehmen — der Import erkennt
+    // das und übersetzt automatisch ins Englische. Vorher stand im Spiel sonst „(line 01)“.
+    const norm = (v?: string) => (v || '').replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim();
+    const text = norm(clip.caption) || norm(clip.captionDe) || `(line ${n})`;
+    const de = norm(clip.captionDe) || text;
 
     // Das Spiel spielt das Original ab `t` — also auch ab dort schneiden, sonst ist es versetzt
     const source = clipAudioFor(clip, t, end, { vocals: vocalsMedia, video: videoMedia });

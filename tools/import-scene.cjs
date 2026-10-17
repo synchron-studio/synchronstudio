@@ -149,7 +149,8 @@ function validate(dir, opts = {}) {
   if (!scene || typeof scene !== 'object' || Array.isArray(scene)) throw new ImportError('scene.json enthält keine Szene.');
   // „als <id>“ in links.txt: diese Szene ersetzt eine bestehende (z. B. neue deutsche Fassung)
   if (opts.forceId && scene.id !== opts.forceId) {
-    const oldId = String(scene.id || ''), nid = opts.forceId;
+    // Alte ID nur als Ordnername nutzen, wenn sie harmlos ist (kein „../“ o. Ä. aus fremden Packs)
+    const oldId = /^[a-z0-9_-]{1,80}$/i.test(String(scene.id || '')) ? String(scene.id) : '', nid = opts.forceId;
     const mv = (a, b) => { if (oldId && fs.existsSync(path.join(dir, a)) && !fs.existsSync(path.join(dir, b))) { fs.mkdirSync(path.dirname(path.join(dir, b)), { recursive: true }); fs.renameSync(path.join(dir, a), path.join(dir, b)); } };
     mv(`scenes/${oldId}.mp4`, `scenes/${nid}.mp4`);
     mv(`scenes/${oldId}`, `scenes/${nid}`);
